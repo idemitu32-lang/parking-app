@@ -13,8 +13,9 @@ async function getLot(id: string): Promise<ParkingLot | null> {
   return data
 }
 
-export default async function LotPage({ params }: { params: { id: string } }) {
-  const lot = await getLot(params.id)
+export default async function LotPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const lot = await getLot(id)
   if (!lot) notFound()
 
   return (

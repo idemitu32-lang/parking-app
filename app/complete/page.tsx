@@ -23,9 +23,9 @@ async function verifyPayment(merchantPaymentId: string) {
 export default async function CompletePage({
   searchParams,
 }: {
-  searchParams: { merchantPaymentId?: string }
+  searchParams: Promise<{ merchantPaymentId?: string }>
 }) {
-  const merchantPaymentId = searchParams.merchantPaymentId
+  const { merchantPaymentId } = await searchParams
 
   if (!merchantPaymentId) {
     return (
