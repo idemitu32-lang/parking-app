@@ -1,59 +1,41 @@
 import { CategoryScore, HorizonForecast, StockForecast, OHLCV } from '../types';
-import { clamp, safe, scoreToDirection } from '../utils';
+import { clamp, scoreToDirection } from '../utils';
 import { runTechnicalAnalysis, calcPriceRange } from './technical';
 import { runThemeAnalysis } from './themes';
 import { runEventAnalysis } from './events';
 import { runBacktest } from './backtest';
-
-const MACRO_SCORE: CategoryScore = {
-  score: 72,
-  confidence: 0.5,
-  reasons: [
-    { name: 'FRB利下げ期待', score: 8, reason: '2026年後半の利下げ観測がグロース株をサポート', source: 'マクロ環境（手動設定）' },
-    { name: '米中関係', score: -5, reason: '輸出規制リスクは継続。半導体関連は要注意', source: 'マクロ環境（手動設定）' },
-    { name: 'AI投資サイクル', score: 10, reason: 'ハイパースケーラーの設備投資拡大が続く', source: 'マクロ環境（手動設定）' },
-    { name: '円安動向', score: 5, reason: '円安継続で日本株の海外売上に追い風', source: 'マクロ環境（手動設定）' },
-  ],
-  warnings: ['マクロスコアは手動設定値です（Phase 2で自動取得予定）'],
-};
-
-const FUNDAMENTAL_PLACEHOLDER: CategoryScore = {
-  score: 50,
-  confidence: 0.1,
-  reasons: [],
-  warnings: ['ファンダメンタル分析はPhase 2で実装予定'],
-};
+import { parseFundamental, runFundamentalAnalysis, QuoteSummaryRaw } from './fundamental';
+import { runMacroAnalysis, toMacroDisplay, MacroRaw } from './macro';
+import { runNewsAnalysis, NewsItem } from './news';
 
 const WEIGHTS = {
-  short:  { technical: 0.50, theme: 0.20, macro: 0.10, event: 0.20, fundamental: 0.00 },
-  medium: { technical: 0.35, theme: 0.30, macro: 0.15, event: 0.15, fundamental: 0.05 },
-  long:   { technical: 0.15, theme: 0.35, macro: 0.25, event: 0.10, fundamental: 0.15 },
+  short:  { technical: 0.45, theme: 0.18, macro: 0.12, event: 0.15, fundamental: 0.05, news: 0.05 },
+  medium: { technical: 0.30, theme: 0.25, macro: 0.15, event: 0.12, fundamental: 0.12, news: 0.06 },
+  long:   { technical: 0.12, theme: 0.30, macro: 0.22, event: 0.08, fundamental: 0.20, news: 0.08 },
 };
 
 function combineScores(
   cats: StockForecast['categoryScores'],
-  horizon: 'short' | 'medium' | 'long'
+  horizon: 'short' | 'medium' | 'long',
 ): { score: number; confidence: number; warnings: string[] } {
   const w = WEIGHTS[horizon];
   const entries = [
-    { key: 'technical', cat: cats.technical },
-    { key: 'theme',     cat: cats.theme },
-    { key: 'macro',     cat: cats.macro },
-    { key: 'event',     cat: cats.event },
-    { key: 'fundamental', cat: cats.fundamental },
-  ] as const;
+    { key: 'technical'    as const, cat: cats.technical },
+    { key: 'theme'        as const, cat: cats.theme },
+    { key: 'macro'        as const, cat: cats.macro },
+    { key: 'event'        as const, cat: cats.event },
+    { key: 'fundamental'  as const, cat: cats.fundamental },
+    { key: 'news'         as const, cat: cats.news },
+  ];
 
   let weightedScore = 0;
   let weightedConf = 0;
   const warnings: string[] = [];
 
   for (const { key, cat } of entries) {
-    const wt = w[key];
-    weightedScore += cat.score * wt;
-    weightedConf += cat.confidence * wt;
-    if (cat.warnings.length && key !== 'fundamental') {
-      warnings.push(...cat.warnings.slice(0, 1));
-    }
+    weightedScore += cat.score * w[key];
+    weightedConf += cat.confidence * w[key];
+    if (cat.warnings.length) warnings.push(...cat.warnings.slice(0, 1));
   }
 
   return {
@@ -67,7 +49,7 @@ function buildHorizon(
   horizon: 'short' | 'medium' | 'long',
   cats: StockForecast['categoryScores'],
   data: OHLCV[],
-  horizonDays: number
+  horizonDays: number,
 ): HorizonForecast {
   const { score, confidence, warnings } = combineScores(cats, horizon);
   const direction = scoreToDirection(score);
@@ -78,9 +60,11 @@ function buildHorizon(
     ...cats.theme.reasons,
     ...cats.event.reasons,
     ...cats.macro.reasons,
+    ...cats.fundamental.reasons,
+    ...cats.news.reasons,
   ];
-  const positive = allReasons.filter(r => r.score > 0).sort((a, b) => b.score - a.score).slice(0, 5);
-  const negative = allReasons.filter(r => r.score < 0).sort((a, b) => a.score - b.score).slice(0, 5);
+  const positive = allReasons.filter(r => r.score > 0).sort((a, b) => b.score - a.score).slice(0, 6);
+  const negative = allReasons.filter(r => r.score < 0).sort((a, b) => a.score - b.score).slice(0, 6);
 
   return { horizon, score, direction, confidence, expectedRange, positiveFactors: positive, negativeFactors: negative, warnings };
 }
@@ -90,13 +74,11 @@ function calcDataQuality(cats: StockForecast['categoryScores'], data: OHLCV[]) {
   const warnings: string[] = [];
 
   if (data.length < 20) missingFields.push('価格データ不足');
-  if (cats.fundamental.confidence < 0.3) missingFields.push('ファンダメンタルデータ（Phase 2実装予定）');
-  if (cats.macro.confidence < 0.6) warnings.push('マクロスコアは手動設定値');
+  if (cats.fundamental.confidence < 0.3) missingFields.push('ファンダメンタルデータ取得失敗');
+  if (cats.macro.confidence < 0.5) warnings.push('マクロデータの一部が取得できませんでした');
+  if (cats.news.confidence < 0.3) warnings.push('ニュースデータが少ない');
 
-  const score = clamp(
-    100 - missingFields.length * 15 - warnings.length * 5,
-    0, 100
-  );
+  const score = clamp(100 - missingFields.length * 12 - warnings.length * 4, 0, 100);
   return { score, missingFields, warnings };
 }
 
@@ -107,19 +89,31 @@ const STOCK_NAMES: Record<string, string> = {
 };
 
 function toStockId(symbol: string): string {
-  return symbol.replace('.T', '').replace('285A.T', '285A');
+  return symbol.replace('.T', '').replace(/^285A$/, '285A');
 }
 
-export function buildForecast(symbol: string, data: OHLCV[]): StockForecast {
+const JP_STOCKS = new Set(['285A.T', '5016.T', '5803.T', '5801.T', '5802.T']);
+
+export function buildForecast(
+  symbol: string,
+  data: OHLCV[],
+  quoteSummary: QuoteSummaryRaw | null,
+  macroRaw: MacroRaw,
+  newsItems: NewsItem[],
+): StockForecast {
   const stockId = toStockId(symbol);
+  const isJP = JP_STOCKS.has(symbol);
+
   const technical = runTechnicalAnalysis(data);
   const theme = runThemeAnalysis(stockId);
   const event = runEventAnalysis(stockId);
-  const macro = MACRO_SCORE;
-  const fundamental = FUNDAMENTAL_PLACEHOLDER;
+  const macro = runMacroAnalysis(macroRaw, isJP);
+  const fundamentalDisplay = quoteSummary ? parseFundamental(quoteSummary) : {};
+  const fundamental = runFundamentalAnalysis(stockId, fundamentalDisplay);
+  const news = runNewsAnalysis(newsItems);
   const backtest = runBacktest(data);
 
-  const categoryScores = { technical, theme, macro, event, fundamental };
+  const categoryScores = { technical, theme, macro, event, fundamental, news };
   const dataQuality = calcDataQuality(categoryScores, data);
 
   return {
@@ -134,5 +128,8 @@ export function buildForecast(symbol: string, data: OHLCV[]): StockForecast {
       longTerm:   buildHorizon('long',   categoryScores, data, 180),
     },
     backtest,
+    fundamentalDisplay: Object.keys(fundamentalDisplay).length ? fundamentalDisplay : undefined,
+    macroDisplay: toMacroDisplay(macroRaw),
+    newsItems,
   };
 }

@@ -13,7 +13,10 @@ interface CategoryScore { score: number; confidence: number; reasons: ScoreReaso
 interface ForecastRange { downside: number; base: number; upside: number; }
 interface HorizonForecast { horizon: string; score: number; direction: string; confidence: number; expectedRange: ForecastRange; positiveFactors: ScoreReason[]; negativeFactors: ScoreReason[]; warnings: string[]; }
 interface BacktestResult { verified: boolean; period: string; sampleSize: number; note?: string; oneMonth?: { winRate: number; avgReturn: number; medianReturn: number; maxDrawdown: number; }; signalPerformance: Array<{ signal: string; count: number; avgReturn1m: number; winRate1m: number; }>; }
-interface StockForecast { symbol: string; name: string; updatedAt: string; dataQuality: { score: number; missingFields: string[]; warnings: string[]; }; categoryScores: { technical: CategoryScore; theme: CategoryScore; macro: CategoryScore; event: CategoryScore; fundamental: CategoryScore; }; forecast: { shortTerm: HorizonForecast; mediumTerm: HorizonForecast; longTerm: HorizonForecast; }; backtest: BacktestResult; }
+interface FundamentalDisplay { marketCap?: number; currency?: string; forwardPE?: number; trailingPE?: number; revenueGrowth?: number; grossMargin?: number; operatingMargin?: number; returnOnEquity?: number; pegRatio?: number; debtToEquity?: number; dividendYield?: number; beta?: number; eps?: number; priceToBook?: number; }
+interface MacroDisplay { vix?: number; vixChange?: number; sox?: number; soxChange1m?: number; usdjpy?: number; usdjpyChange?: number; tnx?: number; tnxChange?: number; sp500Change1m?: number; updatedAt?: string; }
+interface NewsItem { title: string; publisher: string; link: string; publishedAt: string; sentiment: 'positive'|'neutral'|'negative'; sentimentScore: number; }
+interface StockForecast { symbol: string; name: string; updatedAt: string; dataQuality: { score: number; missingFields: string[]; warnings: string[]; }; categoryScores: { technical: CategoryScore; theme: CategoryScore; macro: CategoryScore; event: CategoryScore; fundamental: CategoryScore; news: CategoryScore; }; forecast: { shortTerm: HorizonForecast; mediumTerm: HorizonForecast; longTerm: HorizonForecast; }; backtest: BacktestResult; fundamentalDisplay?: FundamentalDisplay; macroDisplay?: MacroDisplay; newsItems?: NewsItem[]; }
 
 // ============================================================
 // 銘柄マスタ
@@ -226,14 +229,34 @@ export default function StocksPage() {
   const [selectedId, setSelectedId] = useState<string>('MU');
   const [ohlc, setOhlc] = useState<OHLC[]>([]);
   const [period, setPeriod] = useState('3mo');
-  const [tab, setTab] = useState<'chart'|'forecast'|'events'|'analysis'>('chart');
+  const [tab, setTab] = useState<'chart'|'forecast'|'events'|'analysis'|'news'>('chart');
   const [forecast, setForecast] = useState<StockForecast | null>(null);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [forecastError, setForecastError] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastUpdate, setLastUpdate] = useState('');
+  const [watchlist, setWatchlist] = useState<Set<string>>(new Set());
+  const [compareId, setCompareId] = useState<string | null>(null);
+  const [compareOhlc, setCompareOhlc] = useState<OHLC[]>([]);
   const chartMounted = useRef(false);
+
+  // Load watchlist from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('stock_watchlist');
+      if (saved) setWatchlist(new Set(JSON.parse(saved)));
+    } catch {}
+  }, []);
+
+  const toggleWatchlist = (id: string) => {
+    setWatchlist(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      try { localStorage.setItem('stock_watchlist', JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  };
 
   const selected = STOCKS.find(s => s.id === selectedId)!;
   const cur = selected.market === 'JP' ? 'JPY' : 'USD';
@@ -287,9 +310,20 @@ export default function StocksPage() {
     }
   }, []);
 
+  const fetchCompareChart = useCallback(async (id: string, p: string) => {
+    if (!id) return;
+    const s = STOCKS.find(x => x.id === id)!;
+    try {
+      const res = await fetch(`/api/stock/chart?ticker=${encodeURIComponent(s.ticker)}&range=${p}`);
+      const data = await res.json();
+      if (!data.error) setCompareOhlc(data.quotes);
+    } catch {}
+  }, []);
+
   useEffect(() => { fetchPrices(); }, [fetchPrices]);
-  useEffect(() => { fetchChart(selectedId, period); }, [selectedId, period, fetchChart]);
-  useEffect(() => { if (tab === 'forecast') fetchForecast(selectedId); }, [selectedId, tab, fetchForecast]);
+  useEffect(() => { fetchChart(selectedId, period); setCompareOhlc([]); }, [selectedId, period, fetchChart]);
+  useEffect(() => { if (compareId) fetchCompareChart(compareId, period); }, [compareId, period, fetchCompareChart]);
+  useEffect(() => { if (tab === 'forecast' || tab === 'news') fetchForecast(selectedId); }, [selectedId, tab, fetchForecast]);
 
   // Render charts after ohlc loads
   useEffect(() => {
@@ -313,17 +347,34 @@ export default function StocksPage() {
       const { macd, sig, hist } = calcMACD(ohlc);
       const rsiArr = calcRSI(ohlc);
 
+      // Normalize compare data to percentage base if compare mode
+      const compareDatasets = compareOhlc.length > 0 ? (() => {
+        const compS = STOCKS.find(x => x.id === compareId);
+        if (!compS) return [];
+        // Find overlap dates and normalize both to 100 at start
+        const mainBase = ohlc[0]?.close ?? 1;
+        const normMain = ohlc.map(d => d.close ? (d.close / mainBase - 1) * 100 : null);
+        const compDates = new Set(compareOhlc.map(d => d.date));
+        const compMap = Object.fromEntries(compareOhlc.map(d => [d.date, d.close]));
+        const compBase = compareOhlc[0]?.close ?? 1;
+        const normComp = ohlc.map(d => compMap[d.date] ? ((compMap[d.date]! / compBase) - 1) * 100 : null);
+        return [
+          { label:`${selected.name} (%)`, data:normMain, borderColor:selected.color, borderWidth:2, pointRadius:0, fill:false },
+          { label:`${compS.name} (%)`, data:normComp, borderColor:compS.color, borderWidth:2, borderDash:[5,3], pointRadius:0, fill:false },
+        ];
+      })() : null;
+
       destroyChart('priceChart');
       new window.Chart(document.getElementById('priceChart'), {
         type:'line',
-        data:{ labels, datasets:[
+        data:{ labels, datasets: compareDatasets ?? [
           { label:'終値', data:ohlc.map(d=>d.close), borderColor:selected.color, borderWidth:2, pointRadius:0, tension:0.3, fill:false },
           { label:'SMA20', data:sma20, borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0, tension:0, fill:false, borderDash:[4,2] },
           { label:'SMA50', data:sma50, borderColor:'#8b5cf6', borderWidth:1.5, pointRadius:0, tension:0, fill:false, borderDash:[4,2] },
           { label:'BB上限', data:bb.map(b=>b.upper), borderColor:'rgba(148,163,184,0.35)', borderWidth:1, pointRadius:0, fill:false, borderDash:[2,3] },
           { label:'BB下限', data:bb.map(b=>b.lower), borderColor:'rgba(148,163,184,0.35)', borderWidth:1, pointRadius:0, fill:'+1', backgroundColor:'rgba(148,163,184,0.04)', borderDash:[2,3] },
         ]},
-        options: CHART_OPTS(cur==='JPY'?'¥':'$'),
+        options: CHART_OPTS(compareDatasets ? '騰落率(%)' : cur==='JPY'?'¥':'$'),
       });
 
       destroyChart('rsiChart');
@@ -413,7 +464,7 @@ export default function StocksPage() {
                 return (
                   <div
                     key={s.id}
-                    onClick={() => { setSelectedId(s.id); setTab('chart'); }}
+                    onClick={() => { setSelectedId(s.id); setForecast(null); if (tab === 'news') setTab('chart'); }}
                     className={`flex items-center gap-2 p-2 rounded-xl cursor-pointer transition-all border ${
                       selectedId===s.id
                         ? 'border-blue-500 bg-blue-500/10'
@@ -425,7 +476,13 @@ export default function StocksPage() {
                       {s.ticker.replace('.T','').slice(0,4)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-semibold truncate">{s.name}</div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[13px] font-semibold truncate">{s.name}</span>
+                        <button
+                          onClick={e => { e.stopPropagation(); toggleWatchlist(s.id); }}
+                          className={`text-[12px] shrink-0 transition-colors ${watchlist.has(s.id) ? 'text-yellow-400' : 'text-slate-600 hover:text-slate-400'}`}
+                        >★</button>
+                      </div>
                       <div className="text-[10px] text-slate-400">{s.ticker}</div>
                     </div>
                     <div className="text-right shrink-0">
@@ -486,13 +543,13 @@ export default function StocksPage() {
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 mb-5 bg-[#111827] border border-[#1e3a5f] rounded-xl p-1 w-fit">
-            {(['chart','forecast','events','analysis'] as const).map(t => (
+          <div className="flex gap-1 mb-5 bg-[#111827] border border-[#1e3a5f] rounded-xl p-1 flex-wrap">
+            {(['chart','forecast','events','news','analysis'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
-                className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                   tab===t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1a2332]'
                 }`}>
-                {t==='chart'?'📈 チャート':t==='forecast'?'🎯 シナリオ分析':t==='events'?'📅 イベント':'🔍 分析'}
+                {t==='chart'?'📈 チャート':t==='forecast'?'🎯 シナリオ分析':t==='events'?'📅 イベント':t==='news'?'📰 ニュース':'🔍 分析'}
               </button>
             ))}
           </div>
@@ -508,13 +565,26 @@ export default function StocksPage() {
           {/* Chart Tab */}
           {!loading && tab === 'chart' && (
             <div>
-              <div className="flex gap-2 mb-3 flex-wrap">
+              <div className="flex gap-2 mb-3 flex-wrap items-center">
                 {['1mo','3mo','6mo','1y','2y'].map(p => (
                   <button key={p} onClick={() => setPeriod(p)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                       period===p ? 'bg-blue-600 text-white border-blue-600' : 'border-[#1e3a5f] text-slate-400 hover:border-blue-500 hover:text-slate-200'
                     }`}>{p}</button>
                 ))}
+                <div className="ml-auto flex items-center gap-2">
+                  <span className="text-[11px] text-slate-500">比較:</span>
+                  <select
+                    value={compareId ?? ''}
+                    onChange={e => setCompareId(e.target.value || null)}
+                    className="bg-[#111827] border border-[#1e3a5f] text-slate-300 text-xs rounded-lg px-2 py-1.5"
+                  >
+                    <option value="">なし</option>
+                    {STOCKS.filter(s => s.id !== selectedId).map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-5 mb-3">
                 <div className="text-xs font-bold text-slate-400 mb-3">株価チャート + BB + SMA20/50</div>
@@ -611,14 +681,15 @@ export default function StocksPage() {
 
                     {/* Score breakdown */}
                     <div className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-4">
-                      <div className="text-xs font-bold text-slate-400 uppercase mb-3">スコア内訳</div>
-                      <div className="grid grid-cols-5 gap-2">
+                      <div className="text-xs font-bold text-slate-400 uppercase mb-3">スコア内訳（6カテゴリ）</div>
+                      <div className="grid grid-cols-6 gap-2">
                         {([
                           { key:'テクニカル', cat: cs.technical },
                           { key:'テーマ', cat: cs.theme },
                           { key:'マクロ', cat: cs.macro },
                           { key:'イベント', cat: cs.event },
                           { key:'ファンダ', cat: cs.fundamental },
+                          { key:'ニュース', cat: cs.news },
                         ]).map(({ key, cat }) => (
                           <div key={key} className="text-center">
                             <div className="text-[10px] text-slate-500 mb-1">{key}</div>
@@ -628,6 +699,73 @@ export default function StocksPage() {
                         ))}
                       </div>
                     </div>
+
+                    {/* Macro display */}
+                    {forecast.macroDisplay && (() => {
+                      const m = forecast.macroDisplay!;
+                      const pctStr = (v?: number) => v == null ? '—' : `${v>=0?'+':''}${v.toFixed(1)}%`;
+                      const clsV = (v?: number) => v == null ? 'text-slate-400' : v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-slate-400';
+                      return (
+                        <div className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-4">
+                          <div className="text-xs font-bold text-slate-400 uppercase mb-3">マクロ指標（自動取得）</div>
+                          <div className="grid grid-cols-5 gap-3">
+                            {[
+                              { label:'VIX', val: m.vix?.toFixed(1) ?? '—', sub: `1日: ${pctStr(m.vixChange)}`, cls: m.vix && m.vix > 25 ? 'text-red-400' : m.vix && m.vix < 18 ? 'text-emerald-400' : 'text-slate-200' },
+                              { label:'SOX 1ヶ月', val: pctStr(m.soxChange1m), sub:'フィラデルフィア半導体指数', cls: clsV(m.soxChange1m) },
+                              { label:'S&P500 1ヶ月', val: pctStr(m.sp500Change1m), sub:'米国株市場', cls: clsV(m.sp500Change1m) },
+                              { label:'USD/JPY', val: m.usdjpy?.toFixed(1) ?? '—', sub: `1ヶ月: ${pctStr(m.usdjpyChange)}`, cls: 'text-slate-200' },
+                              { label:'米10年金利', val: m.tnx ? `${m.tnx.toFixed(2)}%` : '—', sub: `1日変化: ${pctStr(m.tnxChange)}`, cls: m.tnx && m.tnx > 4.5 ? 'text-red-400' : m.tnx && m.tnx < 4.0 ? 'text-emerald-400' : 'text-slate-200' },
+                            ].map(item => (
+                              <div key={item.label} className="bg-[#0a0e1a] rounded-xl p-3 text-center">
+                                <div className="text-[10px] text-slate-500 mb-1">{item.label}</div>
+                                <div className={`text-base font-extrabold ${item.cls}`}>{item.val}</div>
+                                <div className="text-[9px] text-slate-600 mt-0.5">{item.sub}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Fundamental display */}
+                    {forecast.fundamentalDisplay && Object.keys(forecast.fundamentalDisplay).length > 0 && (() => {
+                      const f = forecast.fundamentalDisplay!;
+                      const fmtMktCap = (v?: number) => {
+                        if (!v) return '—';
+                        return cur === 'JPY'
+                          ? v >= 1e12 ? `¥${(v/1e12).toFixed(1)}兆` : `¥${(v/1e8).toFixed(0)}億`
+                          : v >= 1e9 ? `$${(v/1e9).toFixed(1)}B` : `$${(v/1e6).toFixed(0)}M`;
+                      };
+                      const fmtPct2 = (v?: number) => v == null ? '—' : `${(v*100).toFixed(1)}%`;
+                      const fmtNum = (v?: number, d=2) => v == null ? '—' : v.toFixed(d);
+                      return (
+                        <div className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-4">
+                          <div className="text-xs font-bold text-slate-400 uppercase mb-3">ファンダメンタルデータ（Yahoo Finance自動取得）</div>
+                          <div className="grid grid-cols-4 lg:grid-cols-7 gap-2">
+                            {[
+                              { label:'時価総額', val: fmtMktCap(f.marketCap) },
+                              { label:'予想PER', val: fmtNum(f.forwardPE) },
+                              { label:'実績PER', val: fmtNum(f.trailingPE) },
+                              { label:'PBR', val: fmtNum(f.priceToBook) },
+                              { label:'PEGレシオ', val: fmtNum(f.pegRatio) },
+                              { label:'EPS', val: f.eps != null ? (cur==='JPY'?'¥':'$')+f.eps.toFixed(2) : '—' },
+                              { label:'ベータ', val: fmtNum(f.beta) },
+                              { label:'売上成長率', val: fmtPct2(f.revenueGrowth) },
+                              { label:'粗利率', val: fmtPct2(f.grossMargin) },
+                              { label:'営業利益率', val: fmtPct2(f.operatingMargin) },
+                              { label:'ROE', val: fmtPct2(f.returnOnEquity) },
+                              { label:'D/Eレシオ', val: fmtNum(f.debtToEquity, 0) },
+                              { label:'配当利回り', val: fmtPct2(f.dividendYield) },
+                            ].map(item => (
+                              <div key={item.label} className="bg-[#0a0e1a] rounded-lg p-2 text-center">
+                                <div className="text-[9px] text-slate-500 mb-0.5">{item.label}</div>
+                                <div className="text-xs font-bold text-slate-200">{item.val}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Short-term factors */}
                     <div className="grid grid-cols-2 gap-3">
@@ -730,6 +868,66 @@ export default function StocksPage() {
                     ))}
                   </div>
               }
+            </div>
+          )}
+
+          {/* News Tab */}
+          {tab === 'news' && (
+            <div>
+              {forecastLoading && (
+                <div className="flex items-center justify-center h-32 gap-3">
+                  <div className="w-7 h-7 border-2 border-[#1e3a5f] border-t-blue-500 rounded-full animate-spin"/>
+                  <span className="text-sm text-slate-400">ニュースを取得中...</span>
+                </div>
+              )}
+              {!forecastLoading && forecast?.newsItems && (() => {
+                const items = forecast.newsItems!;
+                const sentColor = (s: string) => s === 'positive' ? '#10b981' : s === 'negative' ? '#ef4444' : '#94a3b8';
+                const sentLabel = (s: string) => s === 'positive' ? '↑ポジティブ' : s === 'negative' ? '↓ネガティブ' : '─中立';
+                const posCount = items.filter(n => n.sentiment === 'positive').length;
+                const negCount = items.filter(n => n.sentiment === 'negative').length;
+                return (
+                  <div className="flex flex-col gap-3">
+                    {/* Sentiment summary */}
+                    <div className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-4 flex items-center gap-6">
+                      <div className="text-xs text-slate-400">ニュースセンチメント ({items.length}件)</div>
+                      <div className="flex gap-4">
+                        <span className="text-emerald-400 font-bold text-sm">↑ {posCount}件</span>
+                        <span className="text-red-400 font-bold text-sm">↓ {negCount}件</span>
+                        <span className="text-slate-400 font-bold text-sm">─ {items.length - posCount - negCount}件</span>
+                      </div>
+                      <div className="flex-1 h-2 bg-[#1e3a5f] rounded-full overflow-hidden ml-2">
+                        <div className="h-full rounded-full bg-emerald-500" style={{width:`${items.length?posCount/items.length*100:50}%`}}/>
+                      </div>
+                    </div>
+                    {/* News list */}
+                    {items.map((n, i) => {
+                      const age = Math.floor((Date.now() - new Date(n.publishedAt).getTime()) / 3600000);
+                      const ageStr = age < 24 ? `${age}時間前` : `${Math.floor(age/24)}日前`;
+                      return (
+                        <a key={i} href={n.link} target="_blank" rel="noopener noreferrer"
+                          className="bg-[#111827] border border-[#1e3a5f] hover:border-blue-500/50 rounded-xl p-4 flex items-start gap-3 transition-all cursor-pointer group">
+                          <div className="w-1.5 h-full min-h-[2.5rem] rounded-full shrink-0 mt-1" style={{background:sentColor(n.sentiment)}}/>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-slate-200 group-hover:text-blue-300 leading-snug">{n.title}</div>
+                            <div className="flex items-center gap-3 mt-1.5">
+                              <span className="text-[10px]" style={{color:sentColor(n.sentiment)}}>{sentLabel(n.sentiment)}</span>
+                              <span className="text-[10px] text-slate-500">{n.publisher}</span>
+                              <span className="text-[10px] text-slate-600">{ageStr}</span>
+                            </div>
+                          </div>
+                          <span className="text-slate-600 group-hover:text-blue-400 shrink-0 mt-1">↗</span>
+                        </a>
+                      );
+                    })}
+                    {items.length === 0 && <div className="text-slate-500 text-sm p-4">ニュースデータが取得できませんでした</div>}
+                    <div className="text-[10px] text-slate-600 pt-2">センチメント判定はキーワードベースの自動分析です。内容を確認の上ご利用ください。</div>
+                  </div>
+                );
+              })()}
+              {!forecastLoading && !forecast?.newsItems && !forecastError && (
+                <div className="text-slate-500 text-sm p-4">ニュースを読み込めませんでした</div>
+              )}
             </div>
           )}
 

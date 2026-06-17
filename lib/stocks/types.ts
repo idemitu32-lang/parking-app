@@ -64,6 +64,50 @@ export interface BacktestResult {
   }>;
 }
 
+// Phase 2: fundamental display data
+export interface FundamentalDisplay {
+  marketCap?: number;
+  currency?: string;
+  forwardPE?: number;
+  trailingPE?: number;
+  revenueGrowth?: number;
+  grossMargin?: number;
+  operatingMargin?: number;
+  returnOnEquity?: number;
+  pegRatio?: number;
+  debtToEquity?: number;
+  dividendYield?: number;
+  beta?: number;
+  eps?: number;
+  priceToBook?: number;
+}
+
+// Phase 2: macro display data
+export interface MacroDisplay {
+  vix?: number;
+  vixChange?: number;
+  sox?: number;
+  soxChange1m?: number;
+  usdjpy?: number;
+  usdjpyChange?: number;
+  tnx?: number;
+  tnxChange?: number;
+  sp500Change1m?: number;
+  updatedAt?: string;
+}
+
+// Phase 3: news
+export type NewsSentiment = 'positive' | 'neutral' | 'negative';
+
+export interface NewsItem {
+  title: string;
+  publisher: string;
+  link: string;
+  publishedAt: string;
+  sentiment: NewsSentiment;
+  sentimentScore: number;
+}
+
 export interface StockForecast {
   symbol: string;
   name: string;
@@ -79,6 +123,7 @@ export interface StockForecast {
     macro: CategoryScore;
     event: CategoryScore;
     fundamental: CategoryScore;
+    news: CategoryScore;
   };
   forecast: {
     shortTerm: HorizonForecast;
@@ -86,4 +131,9 @@ export interface StockForecast {
     longTerm: HorizonForecast;
   };
   backtest: BacktestResult;
+  // Phase 2+
+  fundamentalDisplay?: FundamentalDisplay;
+  macroDisplay?: MacroDisplay;
+  // Phase 3
+  newsItems?: NewsItem[];
 }
