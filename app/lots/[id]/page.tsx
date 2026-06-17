@@ -5,13 +5,17 @@ import { notFound } from 'next/navigation'
 import BookingForm from './BookingForm'
 
 async function getLot(id: string): Promise<ParkingLot | null> {
-  const { data } = await supabase
-    .from('parking_lots')
-    .select('*')
-    .eq('id', id)
-    .eq('is_active', true)
-    .single()
-  return data
+  try {
+    const { data } = await supabase
+      .from('parking_lots')
+      .select('*')
+      .eq('id', id)
+      .eq('is_active', true)
+      .single()
+    return data
+  } catch {
+    return null
+  }
 }
 
 export default async function LotPage({ params }: { params: Promise<{ id: string }> }) {

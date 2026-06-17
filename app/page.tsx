@@ -5,26 +5,32 @@ import Link from 'next/link'
 export const dynamic = 'force-dynamic'
 
 async function getParkingLots(): Promise<ParkingLot[]> {
-  const { data, error } = await supabase
-    .from('parking_lots')
-    .select('*')
-    .eq('is_active', true)
-    .order('name')
-  if (error) throw error
-  return data ?? []
+  try {
+    const { data, error } = await supabase
+      .from('parking_lots')
+      .select('*')
+      .eq('is_active', true)
+      .order('name')
+    if (error) return []
+    return data ?? []
+  } catch {
+    return []
+  }
 }
 
-// 現在使用中の駐車場IDを取得
 async function getOccupiedLotIds(): Promise<Set<string>> {
-  const now = new Date().toISOString()
-  const { data } = await supabase
-    .from('reservations')
-    .select('parking_lot_id')
-    .eq('status', 'paid')
-    .lte('start_time', now)
-    .gte('end_time', now)
-  const ids = new Set((data ?? []).map((r: { parking_lot_id: string }) => r.parking_lot_id))
-  return ids
+  try {
+    const now = new Date().toISOString()
+    const { data } = await supabase
+      .from('reservations')
+      .select('parking_lot_id')
+      .eq('status', 'paid')
+      .lte('start_time', now)
+      .gte('end_time', now)
+    return new Set((data ?? []).map((r: { parking_lot_id: string }) => r.parking_lot_id))
+  } catch {
+    return new Set()
+  }
 }
 
 export default async function HomePage() {
