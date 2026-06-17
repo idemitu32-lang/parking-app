@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { supabase } from '@/lib/supabase'
 import { ParkingLot } from '@/types'
 import { notFound } from 'next/navigation'

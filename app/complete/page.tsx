@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { createServiceClient } from '@/lib/supabase'
 import { formatDateTime } from '@/lib/pricing'
 import Link from 'next/link'

@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabase'
 import { ParkingLot } from '@/types'
 import Link from 'next/link'
 
-export const revalidate = 60 // 1分ごとに再取得
+export const dynamic = 'force-dynamic'
 
 async function getParkingLots(): Promise<ParkingLot[]> {
   const { data, error } = await supabase
