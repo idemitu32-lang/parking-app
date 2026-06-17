@@ -332,6 +332,104 @@ export default function StocksPage() {
     setTimeout(() => renderCharts(), 80);
   }, [chartReady, ohlc, tab, loading, selected]);
 
+  // Render forecast chart when forecast + ohlc are both ready
+  useEffect(() => {
+    if (!chartReady || !forecast || !ohlc.length || tab !== 'forecast') return;
+    setTimeout(() => renderForecastChart(), 120);
+  }, [chartReady, forecast, ohlc, tab, selected]);
+
+  function renderForecastChart() {
+    if (!forecast || !ohlc.length || !window.Chart) return;
+    destroyChart('forecastChart');
+
+    const histDays = 90;
+    const hist = ohlc.slice(-histDays);
+    const lastClose = hist.at(-1)?.close ?? 1;
+    const fc = forecast.forecast;
+
+    // Project anchor points: today + 14d + 45d + 180d
+    const anchors = [
+      { day: 0,   bull: lastClose, base: lastClose, bear: lastClose },
+      { day: 14,  ...fc.shortTerm.expectedRange  ? { bull: fc.shortTerm.expectedRange.upside,   base: fc.shortTerm.expectedRange.base,   bear: fc.shortTerm.expectedRange.downside  } : { bull: lastClose, base: lastClose, bear: lastClose } },
+      { day: 45,  ...fc.mediumTerm.expectedRange ? { bull: fc.mediumTerm.expectedRange.upside,  base: fc.mediumTerm.expectedRange.base,  bear: fc.mediumTerm.expectedRange.downside } : { bull: lastClose, base: lastClose, bear: lastClose } },
+      { day: 180, ...fc.longTerm.expectedRange   ? { bull: fc.longTerm.expectedRange.upside,    base: fc.longTerm.expectedRange.base,    bear: fc.longTerm.expectedRange.downside   } : { bull: lastClose, base: lastClose, bear: lastClose } },
+    ];
+
+    // Generate smooth future labels & interpolated prices
+    const futureDays = 180;
+    const futureLabels: string[] = [];
+    const bullLine: (number|null)[] = [];
+    const baseLine: (number|null)[] = [];
+    const bearLine: (number|null)[] = [];
+
+    const today = new Date();
+    for (let d = 1; d <= futureDays; d++) {
+      const dt = new Date(today); dt.setDate(dt.getDate() + d);
+      futureLabels.push(`${dt.getMonth()+1}/${dt.getDate()}`);
+      // Cubic interpolation between anchors
+      let prev = anchors[0], next = anchors[anchors.length-1];
+      for (let i = 0; i < anchors.length - 1; i++) {
+        if (d >= anchors[i].day && d <= anchors[i+1].day) { prev = anchors[i]; next = anchors[i+1]; break; }
+      }
+      const t = prev.day === next.day ? 0 : (d - prev.day) / (next.day - prev.day);
+      const ease = t * t * (3 - 2 * t); // smoothstep
+      bullLine.push(prev.bull + (next.bull - prev.bull) * ease);
+      baseLine.push(prev.base + (next.base - prev.base) * ease);
+      bearLine.push(prev.bear + (next.bear - prev.bear) * ease);
+    }
+
+    const histLabels = hist.map(d => { const dt = new Date(d.date); return `${dt.getMonth()+1}/${dt.getDate()}`; });
+    const allLabels = [...histLabels, ...futureLabels];
+    const histData: (number|null)[] = [...hist.map(d => d.close), ...Array(futureDays).fill(null)];
+    const bullData: (number|null)[] = [...Array(histDays - 1).fill(null), lastClose, ...bullLine];
+    const baseData: (number|null)[] = [...Array(histDays - 1).fill(null), lastClose, ...baseLine];
+    const bearData: (number|null)[] = [...Array(histDays - 1).fill(null), lastClose, ...bearLine];
+
+    new window.Chart(document.getElementById('forecastChart'), {
+      type: 'line',
+      data: {
+        labels: allLabels,
+        datasets: [
+          { label: '実績', data: histData, borderColor: selected.color, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.3 },
+          { label: '強気シナリオ', data: bullData, borderColor: 'rgba(16,185,129,0.9)', borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, fill: false, tension: 0.4 },
+          { label: '標準シナリオ', data: baseData, borderColor: '#8b5cf6', borderWidth: 2, borderDash: [8,4], pointRadius: 0, fill: false, tension: 0.4 },
+          { label: '弱気シナリオ', data: bearData, borderColor: 'rgba(239,68,68,0.9)', borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, fill: false, tension: 0.4 },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 12 } },
+          tooltip: {
+            backgroundColor: '#1a2332', borderColor: '#1e3a5f', borderWidth: 1,
+            titleColor: '#e2e8f0', bodyColor: '#94a3b8',
+            callbacks: {
+              label: (ctx: any) => {
+                if (ctx.raw == null) return '';
+                const v = ctx.raw as number;
+                const fmt = cur === 'JPY' ? '¥'+Math.round(v).toLocaleString() : '$'+v.toFixed(2);
+                return `${ctx.dataset.label}: ${fmt}`;
+              },
+            },
+          },
+          annotation: { annotations: {} },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#475569', font: { size: 10 }, maxTicksLimit: 12, maxRotation: 0 },
+            grid: { color: 'rgba(30,58,95,0.4)' },
+          },
+          y: {
+            ticks: { color: '#475569', font: { size: 10 } },
+            grid: { color: 'rgba(30,58,95,0.4)' },
+          },
+        },
+      },
+    });
+  }
+
   function renderCharts() {
     if (!ohlc.length || !window.Chart) return;
     const labels = ohlc.map(d => {
@@ -641,6 +739,22 @@ export default function StocksPage() {
                         ⚠ データ品質スコア: {dq.score}/100 — 不足: {dq.missingFields.join(', ')}
                       </div>
                     )}
+
+                    {/* Forecast Chart */}
+                    <div className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <div className="text-sm font-bold text-slate-300">想定レンジチャート（過去90日 ＋ 今後180日）</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">ATRボラティリティ × 方向スコアで算出した統計的想定レンジ。価格予測ではありません。</div>
+                        </div>
+                        <div className="flex gap-3 text-[10px]">
+                          <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-emerald-500 rounded"/>強気</span>
+                          <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-purple-500 rounded"/>標準</span>
+                          <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-red-500 rounded"/>弱気</span>
+                        </div>
+                      </div>
+                      <canvas id="forecastChart" style={{maxHeight:'340px'}}/>
+                    </div>
 
                     {/* 3-horizon grid */}
                     <div className="grid grid-cols-3 gap-3">
