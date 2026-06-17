@@ -1,43 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
-import YahooFinanceClass from 'yahoo-finance2';
-const yf = new (YahooFinanceClass as any)({ suppressNotices: ['yahooSurvey'] });
+
+const RANGE_MAP: Record<string, number> = { '1mo':31,'3mo':92,'6mo':183,'1y':366,'2y':731 };
+const INTERVAL_MAP: Record<string, string> = { '1mo':'1d','3mo':'1d','6mo':'1d','1y':'1d','2y':'1wk' };
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const ticker = searchParams.get('ticker');
-  const range = searchParams.get('range') || '3mo';
+  const range  = searchParams.get('range') || '3mo';
 
-  if (!ticker) {
-    return NextResponse.json({ error: 'ticker required' }, { status: 400 });
-  }
+  if (!ticker) return NextResponse.json({ error: 'ticker required' }, { status: 400 });
 
-  const intervalMap: Record<string, '1d' | '1wk'> = {
-    '1mo': '1d', '3mo': '1d', '6mo': '1d', '1y': '1d', '2y': '1wk',
-  };
-  const interval = intervalMap[range] ?? '1d';
+  const interval = INTERVAL_MAP[range] ?? '1d';
+  const end = Math.floor(Date.now() / 1000);
+  const start = end - (RANGE_MAP[range] ?? 92) * 86400;
 
-  const end = new Date();
-  const start = new Date();
-  const rangeMap: Record<string, number> = { '1mo': 31, '3mo': 92, '6mo': 183, '1y': 366, '2y': 731 };
-  start.setDate(start.getDate() - (rangeMap[range] ?? 92));
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${start}&period2=${end}&interval=${interval}&includePrePost=false`;
 
   try {
-    const result = await yf.chart(ticker, {
-      period1: start,
-      period2: end,
-      interval,
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+      },
+      next: { revalidate: 300 },
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
+    if (!result) throw new Error('No data');
 
-    const quotes = result.quotes
-      .filter((q: any) => q.close != null)
-      .map((q: any) => ({
-        date: q.date instanceof Date ? q.date.toISOString().slice(0, 10) : String(q.date).slice(0, 10),
-        open: q.open,
-        high: q.high,
-        low: q.low,
-        close: q.close,
-        volume: q.volume ?? 0,
-      }));
+    const timestamps: number[] = result.timestamp ?? [];
+    const q = result.indicators.quote[0];
+    const quotes = timestamps
+      .map((ts, i) => ({
+        date:   new Date(ts * 1000).toISOString().slice(0, 10),
+        open:   q.open?.[i]   ?? null,
+        high:   q.high?.[i]   ?? null,
+        low:    q.low?.[i]    ?? null,
+        close:  q.close?.[i]  ?? null,
+        volume: q.volume?.[i] ?? 0,
+      }))
+      .filter(d => d.close != null);
 
     return NextResponse.json({ ticker, currency: result.meta.currency, quotes });
   } catch (e: any) {

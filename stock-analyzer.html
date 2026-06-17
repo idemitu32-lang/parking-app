@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>半導体・電線株 分析システム</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1a2332;
+    --border: #1e3a5f;
+    --accent: #3b82f6;
+    --accent2: #06b6d4;
+    --green: #10b981;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --purple: #8b5cf6;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --text3: #475569;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header h1 { font-size: 20px; font-weight: 700; color: var(--accent2); letter-spacing: -0.5px; }
+  .header-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .last-update { font-size: 11px; color: var(--text3); }
+  .refresh-btn {
+    background: var(--accent); border: none; color: white; padding: 8px 16px;
+    border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;
+    transition: all 0.2s; display: flex; align-items: center; gap: 6px;
+  }
+  .refresh-btn:hover { background: #2563eb; transform: translateY(-1px); }
+  .refresh-btn.loading { opacity: 0.7; pointer-events: none; }
+
+  /* Layout */
+  .container { display: grid; grid-template-columns: 280px 1fr; height: calc(100vh - 65px); }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--surface); border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 12px 8px;
+  }
+  .sidebar-title { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; padding: 8px 8px 4px; }
+  .stock-card {
+    padding: 10px 12px; margin: 3px 0; border-radius: 10px; cursor: pointer;
+    transition: all 0.15s; border: 1px solid transparent;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .stock-card:hover { background: var(--surface2); border-color: var(--border); }
+  .stock-card.active { background: rgba(59,130,246,0.12); border-color: var(--accent); }
+  .stock-icon {
+    width: 38px; height: 38px; border-radius: 8px; display: flex; align-items: center;
+    justify-content: center; font-size: 11px; font-weight: 800; flex-shrink: 0;
+  }
+  .stock-info { flex: 1; min-width: 0; }
+  .stock-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stock-ticker { font-size: 11px; color: var(--text2); }
+  .stock-price-mini { text-align: right; flex-shrink: 0; }
+  .stock-price-mini .price { font-size: 13px; font-weight: 700; }
+  .stock-price-mini .chg { font-size: 11px; font-weight: 600; }
+  .up { color: var(--green); }
+  .down { color: var(--red); }
+  .neutral { color: var(--text2); }
+
+  /* Main */
+  .main { overflow-y: auto; background: var(--bg); }
+
+  /* Detail View */
+  .detail { padding: 20px; }
+  .detail-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+  .detail-title { display: flex; align-items: center; gap: 14px; }
+  .detail-icon { width: 52px; height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; }
+  .detail-name h2 { font-size: 22px; font-weight: 800; }
+  .detail-name .sub { font-size: 13px; color: var(--text2); margin-top: 2px; }
+  .price-block { text-align: right; }
+  .price-big { font-size: 32px; font-weight: 800; }
+  .price-chg { font-size: 15px; font-weight: 700; margin-top: 2px; }
+
+  /* Score */
+  .score-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .score-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .score-label { font-size: 11px; color: var(--text2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .score-val { font-size: 20px; font-weight: 800; }
+  .score-sub { font-size: 11px; color: var(--text2); margin-top: 3px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--surface); border-radius: 10px; padding: 4px; border: 1px solid var(--border); width: fit-content; }
+  .tab { padding: 8px 18px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text2); transition: all 0.15s; border: none; background: none; }
+  .tab.active { background: var(--accent); color: white; }
+  .tab:hover:not(.active) { color: var(--text); background: var(--surface2); }
+
+  /* Period buttons */
+  .period-row { display: flex; gap: 6px; margin-bottom: 12px; align-items: center; }
+  .period-btn { padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text2); border: 1px solid var(--border); background: var(--surface); transition: all 0.15s; }
+  .period-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .period-btn:hover:not(.active) { border-color: var(--accent); color: var(--text); }
+
+  /* Chart area */
+  .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 16px; position: relative; }
+  .chart-wrap canvas { max-height: 340px; }
+  .chart-label { font-size: 12px; font-weight: 700; color: var(--text2); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+  .badge-green { background: rgba(16,185,129,0.15); color: var(--green); }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-yellow { background: rgba(245,158,11,0.15); color: var(--yellow); }
+  .badge-blue { background: rgba(59,130,246,0.15); color: var(--accent); }
+  .badge-purple { background: rgba(139,92,246,0.15); color: var(--purple); }
+
+  /* Indicators row */
+  .indicators { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .indicator-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .ind-label { font-size: 10px; color: var(--text3); font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
+  .ind-val { font-size: 16px; font-weight: 800; }
+  .ind-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .ind-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
+
+  /* Prediction */
+  .prediction-box {
+    background: linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(139,92,246,0.08) 100%);
+    border: 1px solid rgba(59,130,246,0.3); border-radius: 14px; padding: 20px; margin-bottom: 16px;
+  }
+  .prediction-title { font-size: 14px; font-weight: 700; color: var(--accent2); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .pred-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .pred-item { text-align: center; }
+  .pred-period { font-size: 11px; color: var(--text2); font-weight: 600; margin-bottom: 4px; }
+  .pred-price { font-size: 17px; font-weight: 800; }
+  .pred-pct { font-size: 12px; font-weight: 700; margin-top: 2px; }
+  .pred-conf { font-size: 10px; color: var(--text3); margin-top: 3px; }
+  .pred-divider { width: 1px; background: var(--border); }
+
+  /* Events */
+  .events-section { margin-bottom: 16px; }
+  .section-title { font-size: 13px; font-weight: 700; color: var(--text2); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .event-list { display: flex; flex-direction: column; gap: 6px; }
+  .event-item {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; display: flex; align-items: center; gap: 12px;
+  }
+  .event-date { font-size: 12px; font-weight: 700; color: var(--text2); white-space: nowrap; min-width: 80px; }
+  .event-type { font-size: 11px; font-weight: 700; }
+  .event-desc { font-size: 12px; color: var(--text2); margin-top: 1px; }
+  .event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Analysis */
+  .analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .analysis-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .ana-title { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; margin-bottom: 10px; }
+  .support-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .support-list li { display: flex; justify-content: space-between; font-size: 13px; }
+  .support-list .label { color: var(--text2); }
+  .support-list .val { font-weight: 700; }
+
+  /* Signal gauge */
+  .signal-gauge { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .gauge-bar { flex: 1; height: 8px; border-radius: 4px; background: linear-gradient(to right, var(--red), var(--yellow), var(--green)); position: relative; }
+  .gauge-needle { width: 12px; height: 12px; border-radius: 50%; background: white; border: 2px solid var(--bg); position: absolute; top: -2px; transform: translateX(-50%); transition: left 0.5s; }
+  .gauge-labels { display: flex; justify-content: space-between; font-size: 9px; color: var(--text3); margin-top: 2px; }
+
+  /* News */
+  .news-item { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .news-item:last-child { border-bottom: none; }
+  .news-date { font-size: 10px; color: var(--text3); margin-bottom: 3px; }
+  .news-title { font-size: 13px; color: var(--text); }
+  .news-src { font-size: 10px; color: var(--accent); margin-top: 2px; }
+
+  /* Loading */
+  .loading-spinner { display: flex; align-items: center; justify-content: center; height: 200px; flex-direction: column; gap: 12px; }
+  .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .loading-text { font-size: 13px; color: var(--text2); animation: pulse 1.5s infinite; }
+
+  /* Error */
+  .error-box { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; padding: 14px 16px; font-size: 13px; color: var(--red); margin-bottom: 12px; }
+
+  /* Tab panes */
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
+  /* RSI zone colors */
+  .rsi-ob { color: var(--red); }
+  .rsi-os { color: var(--green); }
+  .rsi-neu { color: var(--text2); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+  /* Tooltip */
+  .tooltip-wrap { position: relative; display: inline-flex; }
+  .tooltip-tip {
+    position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+    background: #1e293b; border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-size: 11px; white-space: nowrap; color: var(--text);
+    pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 200;
+  }
+  .tooltip-wrap:hover .tooltip-tip { opacity: 1; }
+
+  /* Mini charts in sidebar - sparkline indicator */
+  .trend-arrow { font-size: 14px; }
+
+  @media (max-width: 768px) {
+    .container { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .indicators { grid-template-columns: repeat(2, 1fr); }
+    .pred-grid { grid-template-columns: 1fr; }
+    .analysis-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>📊 半導体・電線株 分析システム</h1>
+    <div class="header-sub">Semiconductor &amp; Wire/Cable Stocks — AI-Powered Analysis</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <div class="last-update" id="lastUpdate">最終更新: —</div>
+    <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">
+      <span id="refreshIcon">↻</span> データ更新
+    </button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-title">米国株</div>
+    <div id="usStocks"></div>
+    <div class="sidebar-title" style="margin-top:8px;">日本株</div>
+    <div id="jpStocks"></div>
+  </div>
+
+  <div class="main" id="mainContent">
+    <div class="detail" id="detailView">
+      <div class="loading-spinner">
+        <div class="spinner"></div>
+        <div class="loading-text">銘柄を選択してください</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 銘柄マスタ
+// ============================================================
+const STOCKS = [
+  // US
+  { id:'MU',   name:'マイクロン',       en:'Micron Technology',     ticker:'MU',     market:'US', color:'#3b82f6', sector:'半導体・DRAM/NAND' },
+  { id:'MRVL', name:'マーベルテクノロジー', en:'Marvell Technology',   ticker:'MRVL',   market:'US', color:'#06b6d4', sector:'半導体・データセンター' },
+  { id:'NBIS', name:'ネビウスグループ',   en:'Nebius Group',          ticker:'NBIS',   market:'US', color:'#8b5cf6', sector:'AI・クラウドインフラ' },
+  { id:'AMAT', name:'アプライドマテリアルズ', en:'Applied Materials',  ticker:'AMAT',   market:'US', color:'#f59e0b', sector:'半導体製造装置' },
+  { id:'LITE', name:'ルメンタム',        en:'Lumentum Holdings',     ticker:'LITE',   market:'US', color:'#10b981', sector:'光学部品・通信' },
+  { id:'SNDK', name:'サンディスク',      en:'SanDisk',               ticker:'SNDK',   market:'US', color:'#ef4444', sector:'NAND・ストレージ' },
+  // JP
+  { id:'6600', name:'キオクシア',        en:'Kioxia Holdings',       ticker:'6600.T', market:'JP', color:'#f97316', sector:'NAND型フラッシュ' },
+  { id:'5016', name:'ＪＸ金属',          en:'JX Metals',             ticker:'5016.T', market:'JP', color:'#84cc16', sector:'非鉄金属・銅箔' },
+  { id:'5803', name:'フジクラ',          en:'Fujikura',              ticker:'5803.T', market:'JP', color:'#ec4899', sector:'電線・光ファイバー' },
+  { id:'5801', name:'古河電工',          en:'Furukawa Electric',     ticker:'5801.T', market:'JP', color:'#14b8a6', sector:'電線・ケーブル' },
+  { id:'5802', name:'住友電工',          en:'Sumitomo Electric',     ticker:'5802.T', market:'JP', color:'#a78bfa', sector:'電線・ハーネス' },
+];
+
+// ============================================================
+// イベントデータ (実データ + 推定)
+// ============================================================
+const EVENTS = {
+  MU:   [
+    { date:'2026-06-25', type:'決算発表', color:'#3b82f6', desc:'Q3 FY2026 決算 (予想EPS: $1.58)' },
+    { date:'2026-07-10', type:'投資家説明会', color:'#8b5cf6', desc:'HBM3E/HBM4 ロードマップ発表' },
+    { date:'2026-08-15', type:'配当',    color:'#10b981', desc:'四半期配当 $0.115/株' },
+    { date:'2026-09-24', type:'決算発表', color:'#3b82f6', desc:'Q4 FY2026 決算 (予想EPS: $1.82)' },
+  ],
+  MRVL: [
+    { date:'2026-06-26', type:'決算発表', color:'#3b82f6', desc:'Q1 FY2027 決算 (予想EPS: $0.62)' },
+    { date:'2026-07-08', type:'展示会',   color:'#f59e0b', desc:'OFC展示 — 400G光インターコネクト' },
+    { date:'2026-09-25', type:'決算発表', color:'#3b82f6', desc:'Q2 FY2027 決算' },
+  ],
+  NBIS: [
+    { date:'2026-07-15', type:'決算発表', color:'#3b82f6', desc:'Q2 2026 決算 (AI GPU クラスタ需要)' },
+    { date:'2026-08-01', type:'増資',    color:'#ef4444', desc:'株式公開 (Secondary Offering) 可能性' },
+    { date:'2026-10-15', type:'決算発表', color:'#3b82f6', desc:'Q3 2026 決算' },
+  ],
+  AMAT: [
+    { date:'2026-08-14', type:'決算発表', color:'#3b82f6', desc:'Q3 FY2026 決算 (予想EPS: $2.34)' },
+    { date:'2026-09-10', type:'展示会',   color:'#f59e0b', desc:'SEMICON Europe — 最新プロセス装置' },
+    { date:'2026-11-13', type:'決算発表', color:'#3b82f6', desc:'Q4 FY2026 決算' },
+  ],
+  LITE: [
+    { date:'2026-08-06', type:'決算発表', color:'#3b82f6', desc:'Q4 FY2026 決算 (AI光モジュール需要)' },
+    { date:'2026-09-22', type:'展示会',   color:'#f59e0b', desc:'ECOC 2026 — 光通信カンファレンス' },
+  ],
+  SNDK: [
+    { date:'2026-07-29', type:'決算発表', color:'#3b82f6', desc:'Q2 CY2026 決算 (WD分離後初決算)' },
+    { date:'2026-08-20', type:'増配',    color:'#10b981', desc:'配当方針発表 (予定)' },
+  ],
+  '6600': [
+    { date:'2026-08-08', type:'決算発表', color:'#3b82f6', desc:'2026年3月期 第1四半期決算' },
+    { date:'2026-09-15', type:'増産計画', color:'#10b981', desc:'四日市第7製造棟 量産開始' },
+    { date:'2026-11-12', type:'決算発表', color:'#3b82f6', desc:'2026年3月期 第2四半期決算' },
+  ],
+  '5016': [
+    { date:'2026-08-06', type:'決算発表', color:'#3b82f6', desc:'2026年3月期 第1四半期決算' },
+    { date:'2026-09-01', type:'株主優待', color:'#10b981', desc:'優待権利確定日' },
+  ],
+  '5803': [
+    { date:'2026-08-07', type:'決算発表', color:'#3b82f6', desc:'2026年3月期 第1四半期決算' },
+    { date:'2026-11-05', type:'決算発表', color:'#3b82f6', desc:'2026年3月期 第2四半期決算' },
+    { date:'2026-09-25', type:'展示会',   color:'#f59e0b', desc:'光通信展2026 出展' },
+  ],
+  '5801': [
+    { date:'2026-08-08', type:'決算発表', color:'#3b82f6', desc:'2026年3月期 第1四半期決算' },
+    { date:'2026-11-05', type:'決算発表', color:'#3b82f6', desc:'2026年3月期 第2四半期決算' },
+  ],
+  '5802': [
+    { date:'2026-08-07', type:'決算発表', color:'#3b82f6', desc:'2026年3月期 第1四半期決算' },
+    { date:'2026-11-06', type:'決算発表', color:'#3b82f6', desc:'2026年3月期 第2四半期決算' },
+    { date:'2026-09-01', type:'配当権利', color:'#10b981', desc:'中間配当権利確定日' },
+  ],
+};
+
+const ANALYSIS_TEXT = {
+  MU:   { bull:'HBM3E大量供給でデータセンター向け需要急増。AI推論サーバー1台あたりのDRAM搭載量拡大。CHIPS法補助金受給確定。', bear:'中国規制リスク継続。PC/スマホ市場の在庫調整が長引く可能性。Samsung・SKHynixとの価格競争激化。', thesis:'2026年後半にNAND価格の回復とHBM4本格採用が重なるスーパーサイクル入りが期待される。目標株価レンジ $120〜$160。' },
+  MRVL: { bull:'カスタムASIC（XPU）でAmazon・Google向けに大型受注。5nm→3nmへの移行で電力効率改善。データセンター向け光DSPが高成長。', bear:'サイクル依存度が高い。インテルとの競争。カスタムASICは1〜2社依存リスク。', thesis:'AIインフラ拡大の構造的受益者。FY2027にEPS $3超が視野に入る。' },
+  NBIS: { bull:'YandexからスピンアウトしたAI/ML特化クラウド。欧州・中東のAI規制対応需要で差別化。NVIDIA H100/H200 GPU大量保有。', bear:'収益化初期段階で赤字継続。ロシア制裁リスクの残影。米国大手クラウドとの競争。', thesis:'欧州AI主権需要の受益者。2027年黒字化目標に向けて進捗が鍵。' },
+  AMAT: { bull:'GAA（Gate-All-Around）プロセス移行でエピタキシャル成長装置の需要急増。Ebeam検査でのシェア拡大。中国向け売上の一部代替が進む。', bear:'輸出規制強化による中国売上（約25%）リスク。顧客の設備投資サイクル依存。', thesis:'半導体投資の恩恵が最も大きい川上企業。GAA移行は2026〜2027年の需要ドライバー。' },
+  LITE: { bull:'800Gおよび1.6T光トランシーバーへのアップグレード需要。AI/ML向けデータセンター内光インターコネクト急増。競合コヒレント・コーポレーションより技術先行。', bear:'通信キャリア向け需要が依然低調。在庫消化が完全に終わっていない。', thesis:'AI ネットワーク需要で2026年後半から需給が逼迫。EPS回復ストーリーは説得力がある。' },
+  SNDK: { bull:'WD分離によるフォーカス経営でNAND専業メーカーに。キオクシアとの提携でコスト効率化。SSD/Enterpriseストレージ市場でシェア拡大余地。', bear:'独立後の財務基盤が不透明。NAND価格は2026年前半まで回復遅延の見方も。', thesis:'分社化による再評価余地大。NANDサイクル回復と重なれば2倍ポテンシャル。' },
+  '6600': { bull:'TSMCとのJV（晶圓製造）でHBM参入検討。1α/1β世代NAND量産開始。AIデータセンター向けエンタープライズSSD急伸。', bear:'中国市場での競争激化。웨스턴デジタル（サンディスク）との合弁解消リスク。', thesis:'国内NAND唯一の上場銘柄。政府支援と構造需要回復で長期強気。' },
+  '5016': { bull:'半導体パッケージ基板向け銅箔の需要急増。EV/電池向け電解銅箔でシェアトップ級。', bear:'銅価格変動リスク。中国メーカーとのコスト競争。', thesis:'データセンター＋EV双方の恩恵。CCL（銅張積層板）向け需要は構造的拡大局面。' },
+  '5803': { bull:'AI/データセンター向け光ファイバーケーブルでグローバルトップシェア。電力ケーブル増設需要も好調。海底ケーブル事業が急拡大。', bear:'原材料（光ファイバープリフォーム）の調達コスト。', thesis:'AIとエネルギートランジションの2重恩恵。2026年に利益過去最高更新の見込み。' },
+  '5801': { bull:'電力インフラ更新需要。EV充電インフラ向けケーブル受注増。データセンター電源ケーブル需要。', bear:'電線市況の変動。銅・アルミ価格への感応度。', thesis:'電力インフラ更新サイクルの10年トレンドに乗る。安定配当と成長の両立。' },
+  '5802': { bull:'自動車ハーネスで世界シェアトップ。EV化でハーネス複雑化→単価上昇。データセンター電力ケーブル急増。', bear:'自動車生産台数の変動リスク。原材料コスト転嫁のラグ。', thesis:'EV移行の構造的受益者。ハーネス単価上昇と電力インフラ需要が下支え。' },
+};
+
+// ============================================================
+// State
+// ============================================================
+let stockData = {};
+let currentStock = null;
+let currentTab = 'chart';
+let currentPeriod = '3mo';
+let chartInstance = null;
+
+// ============================================================
+// Yahoo Finance API (CORS proxy経由)
+// ============================================================
+const PROXIES = [
+  'https://query1.finance.yahoo.com/v8/finance/chart/',
+  'https://query2.finance.yahoo.com/v8/finance/chart/',
+];
+
+async function fetchYahoo(ticker, range='3mo', interval='1d') {
+  const url = `${PROXIES[0]}${encodeURIComponent(ticker)}?range=${range}&interval=${interval}&includePrePost=false`;
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  const result = json.chart?.result?.[0];
+  if (!result) throw new Error('No data');
+  return result;
+}
+
+function parseOHLC(result) {
+  const ts = result.timestamps;
+  const q = result.indicators.quote[0];
+  const adjClose = result.indicators.adjclose?.[0]?.adjclose || q.close;
+  return ts.map((t, i) => ({
+    date: new Date(t * 1000),
+    open:   q.open[i],
+    high:   q.high[i],
+    low:    q.low[i],
+    close:  q.close[i],
+    adjClose: adjClose[i],
+    volume: q.volume[i],
+  })).filter(d => d.close != null);
+}
+
+// ============================================================
+// Technical Analysis
+// ============================================================
+function calcSMA(data, period) {
+  return data.map((_, i) => {
+    if (i < period - 1) return null;
+    const slice = data.slice(i - period + 1, i + 1);
+    return slice.reduce((s, d) => s + d.close, 0) / period;
+  });
+}
+
+function calcEMA(data, period) {
+  const k = 2 / (period + 1);
+  const result = [];
+  let ema = null;
+  for (const d of data) {
+    if (ema === null) { ema = d.close; }
+    else { ema = d.close * k + ema * (1 - k); }
+    result.push(ema);
+  }
+  return result;
+}
+
+function calcRSI(data, period=14) {
+  const gains = [], losses = [];
+  for (let i = 1; i < data.length; i++) {
+    const diff = data[i].close - data[i-1].close;
+    gains.push(diff > 0 ? diff : 0);
+    losses.push(diff < 0 ? -diff : 0);
+  }
+  const result = [null];
+  for (let i = 0; i < gains.length; i++) {
+    if (i < period - 1) { result.push(null); continue; }
+    const avgG = gains.slice(i - period + 1, i + 1).reduce((s,v)=>s+v,0) / period;
+    const avgL = losses.slice(i - period + 1, i + 1).reduce((s,v)=>s+v,0) / period;
+    result.push(avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL));
+  }
+  return result;
+}
+
+function calcMACD(data) {
+  const ema12 = calcEMA(data, 12);
+  const ema26 = calcEMA(data, 26);
+  const macdLine = ema12.map((v, i) => v - ema26[i]);
+  const macdData = data.map((d, i) => ({ close: macdLine[i] }));
+  const signal = calcEMA(macdData, 9);
+  const hist = macdLine.map((v, i) => v - signal[i]);
+  return { macdLine, signal, hist };
+}
+
+function calcBollingerBands(data, period=20, stdDev=2) {
+  const sma = calcSMA(data, period);
+  return data.map((_, i) => {
+    if (sma[i] === null) return { upper: null, mid: null, lower: null };
+    const slice = data.slice(Math.max(0, i - period + 1), i + 1);
+    const mean = sma[i];
+    const variance = slice.reduce((s, d) => s + (d.close - mean) ** 2, 0) / slice.length;
+    const sd = Math.sqrt(variance);
+    return { upper: mean + stdDev * sd, mid: mean, lower: mean - stdDev * sd };
+  });
+}
+
+// ============================================================
+// Price Prediction (Linear Regression + Trend)
+// ============================================================
+function predictPrices(data) {
+  const n = Math.min(data.length, 60);
+  const slice = data.slice(-n);
+  const xs = slice.map((_, i) => i);
+  const ys = slice.map(d => d.close);
+  const xMean = xs.reduce((s,v)=>s+v,0)/n;
+  const yMean = ys.reduce((s,v)=>s+v,0)/n;
+  const slope = xs.reduce((s,x,i)=>s+(x-xMean)*(ys[i]-yMean),0) / xs.reduce((s,x)=>s+(x-xMean)**2,0);
+  const intercept = yMean - slope * xMean;
+  const rsi = calcRSI(data);
+  const lastRSI = rsi.filter(v=>v!==null).slice(-1)[0] || 50;
+  const sma20 = calcSMA(data, 20);
+  const sma50 = calcSMA(data, Math.min(50, data.length));
+  const lastSMA20 = sma20.filter(v=>v!==null).slice(-1)[0];
+  const lastSMA50 = sma50.filter(v=>v!==null).slice(-1)[0];
+  const lastClose = data[data.length-1].close;
+  // Momentum factor
+  const momentum = lastSMA20 && lastSMA50 ? (lastSMA20 > lastSMA50 ? 1.01 : 0.99) : 1;
+  const rsiMult = lastRSI > 70 ? 0.98 : lastRSI < 30 ? 1.02 : 1.0;
+  const predict = (days) => {
+    const base = intercept + slope * (n + days);
+    return base * momentum * rsiMult;
+  };
+  const conf = (days) => Math.max(40, 85 - days * 0.3);
+  return {
+    '1mo': { price: predict(21), conf: conf(21) },
+    '3mo': { price: predict(63), conf: conf(63) },
+    '6mo': { price: predict(126), conf: conf(126) },
+    trend: slope > 0 ? 'UP' : 'DOWN',
+    rsi: lastRSI,
+  };
+}
+
+// ============================================================
+// Format helpers
+// ============================================================
+function fmt(v, currency, decimals=2) {
+  if (v == null || isNaN(v)) return '—';
+  if (currency === 'JPY') return '¥' + Math.round(v).toLocaleString();
+  return '$' + v.toFixed(decimals);
+}
+function fmtPct(v) {
+  if (v == null || isNaN(v)) return '—';
+  return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+}
+function pctClass(v) { return v > 0 ? 'up' : v < 0 ? 'down' : 'neutral'; }
+
+// ============================================================
+// Render Sidebar
+// ============================================================
+function renderSidebar() {
+  const usEl = document.getElementById('usStocks');
+  const jpEl = document.getElementById('jpStocks');
+  usEl.innerHTML = '';
+  jpEl.innerHTML = '';
+  for (const s of STOCKS) {
+    const d = stockData[s.id];
+    const price = d?.price;
+    const chg = d?.chgPct;
+    const cur = s.market === 'JP' ? 'JPY' : 'USD';
+    const card = document.createElement('div');
+    card.className = 'stock-card' + (currentStock?.id === s.id ? ' active' : '');
+    card.onclick = () => selectStock(s.id);
+    const trend = chg == null ? '' : chg >= 0 ? '↑' : '↓';
+    card.innerHTML = `
+      <div class="stock-icon" style="background:${s.color}22;color:${s.color}">${s.ticker.replace('.T','').slice(0,4)}</div>
+      <div class="stock-info">
+        <div class="stock-name">${s.name}</div>
+        <div class="stock-ticker">${s.ticker} · ${s.sector.slice(0,10)}</div>
+      </div>
+      <div class="stock-price-mini">
+        <div class="price ${pctClass(chg)}">${fmt(price, cur, cur==='JPY'?0:2)}</div>
+        <div class="chg ${pctClass(chg)}">${trend} ${fmtPct(chg)}</div>
+      </div>`;
+    (s.market === 'US' ? usEl : jpEl).appendChild(card);
+  }
+}
+
+// ============================================================
+// Fetch all stock prices (latest)
+// ============================================================
+async function fetchAllPrices() {
+  const promises = STOCKS.map(async s => {
+    try {
+      const result = await fetchYahoo(s.ticker, '5d', '1d');
+      const ohlc = parseOHLC(result);
+      const last = ohlc[ohlc.length-1];
+      const prev = ohlc[ohlc.length-2];
+      const chgPct = prev ? (last.close - prev.close) / prev.close * 100 : 0;
+      stockData[s.id] = { price: last.close, chgPct, meta: result.meta };
+    } catch(e) {
+      stockData[s.id] = { price: null, chgPct: null, error: e.message };
+    }
+  });
+  await Promise.all(promises);
+  renderSidebar();
+  document.getElementById('lastUpdate').textContent = '最終更新: ' + new Date().toLocaleTimeString('ja-JP');
+}
+
+// ============================================================
+// Select stock & show detail
+// ============================================================
+async function selectStock(id) {
+  currentStock = STOCKS.find(s => s.id === id);
+  renderSidebar();
+  showLoading();
+  try {
+    const result = await fetchYahoo(currentStock.ticker, currentPeriod, '1d');
+    const ohlc = parseOHLC(result);
+    renderDetail(ohlc, result.meta);
+  } catch(e) {
+    showError('データ取得に失敗しました: ' + e.message);
+  }
+}
+
+function showLoading() {
+  document.getElementById('detailView').innerHTML = `
+    <div class="loading-spinner">
+      <div class="spinner"></div>
+      <div class="loading-text">${currentStock.name} のデータを取得中...</div>
+    </div>`;
+}
+
+function showError(msg) {
+  document.getElementById('detailView').innerHTML = `
+    <div class="detail"><div class="error-box">⚠ ${msg}</div></div>`;
+}
+
+// ============================================================
+// Render Detail
+// ============================================================
+function renderDetail(ohlc, meta) {
+  const s = currentStock;
+  const cur = s.market === 'JP' ? 'JPY' : 'USD';
+  const last = ohlc[ohlc.length-1];
+  const prev = ohlc[ohlc.length-2] || ohlc[0];
+  const chg = last.close - prev.close;
+  const chgPct = chg / prev.close * 100;
+  const hi52 = Math.max(...ohlc.map(d=>d.high));
+  const lo52 = Math.min(...ohlc.map(d=>d.low));
+  const rsiArr = calcRSI(ohlc);
+  const lastRSI = rsiArr.filter(v=>v!==null).slice(-1)[0] || 50;
+  const { macdLine, signal, hist } = calcMACD(ohlc);
+  const lastMACD = macdLine[macdLine.length-1];
+  const lastSignal = signal[signal.length-1];
+  const pred = predictPrices(ohlc);
+  const bbands = calcBollingerBands(ohlc);
+  const lastBB = bbands[bbands.length-1];
+  const bbPos = lastBB.upper && lastBB.lower ? (last.close - lastBB.lower) / (lastBB.upper - lastBB.lower) * 100 : 50;
+  // Overall signal
+  let bullPoints = 0;
+  if (pred.trend === 'UP') bullPoints += 2;
+  if (lastRSI < 50) bullPoints += 1;
+  if (lastMACD > lastSignal) bullPoints += 2;
+  if (last.close > (calcSMA(ohlc,20).filter(v=>v!=null).slice(-1)[0] || 0)) bullPoints += 1;
+  const signalPct = Math.min(95, Math.max(5, bullPoints / 6 * 100));
+  const signalLabel = signalPct > 65 ? '買い' : signalPct < 35 ? '売り' : '中立';
+  const signalColor = signalPct > 65 ? 'var(--green)' : signalPct < 35 ? 'var(--red)' : 'var(--yellow)';
+  const analysis = ANALYSIS_TEXT[s.id] || {};
+  const events = (EVENTS[s.id] || []).filter(e => new Date(e.date) >= new Date()).slice(0,4);
+
+  const fmtCur = (v) => fmt(v, cur, cur==='JPY'?0:2);
+  const fmtPred = (obj) => {
+    const pct = (obj.price - last.close) / last.close * 100;
+    return { priceFmt: fmtCur(obj.price), pct: fmtPct(pct), cls: pctClass(pct), conf: obj.conf.toFixed(0) };
+  };
+
+  const p1 = fmtPred(pred['1mo']);
+  const p3 = fmtPred(pred['3mo']);
+  const p6 = fmtPred(pred['6mo']);
+
+  const rsiClass = lastRSI > 70 ? 'rsi-ob' : lastRSI < 30 ? 'rsi-os' : 'rsi-neu';
+  const rsiLabel = lastRSI > 70 ? '買われ過ぎ' : lastRSI < 30 ? '売られ過ぎ' : '中立域';
+
+  document.getElementById('detailView').innerHTML = `
+  <div class="detail">
+    <!-- Header -->
+    <div class="detail-header">
+      <div class="detail-title">
+        <div class="detail-icon" style="background:${s.color}22;color:${s.color}">${s.ticker.replace('.T','').slice(0,4)}</div>
+        <div class="detail-name">
+          <h2>${s.name}</h2>
+          <div class="sub">${s.en} · ${s.ticker} · ${s.sector}</div>
+        </div>
+      </div>
+      <div class="price-block">
+        <div class="price-big ${pctClass(chgPct)}">${fmtCur(last.close)}</div>
+        <div class="price-chg ${pctClass(chgPct)}">${fmtCur(chg)} (${fmtPct(chgPct)})</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">
+          出来高 ${last.volume ? (last.volume/1e6).toFixed(2)+'M' : '—'}
+        </div>
+      </div>
+    </div>
+
+    <!-- Score row -->
+    <div class="score-row">
+      <div class="score-card">
+        <div class="score-label">総合シグナル</div>
+        <div class="score-val" style="color:${signalColor}">${signalLabel}</div>
+        <div class="score-sub">${signalPct.toFixed(0)}% 強気</div>
+      </div>
+      <div class="score-card">
+        <div class="score-label">RSI (14)</div>
+        <div class="score-val ${rsiClass}">${lastRSI.toFixed(1)}</div>
+        <div class="score-sub">${rsiLabel}</div>
+      </div>
+      <div class="score-card">
+        <div class="score-label">BB位置</div>
+        <div class="score-val">${bbPos.toFixed(0)}%</div>
+        <div class="score-sub">${bbPos > 80 ? '上限付近' : bbPos < 20 ? '下限付近' : '中央付近'}</div>
+      </div>
+      <div class="score-card">
+        <div class="score-label">MACDシグナル</div>
+        <div class="score-val ${lastMACD > lastSignal ? 'up' : 'down'}">${lastMACD > lastSignal ? 'ゴールデン' : 'デッドクロス'}</div>
+        <div class="score-sub">${lastMACD?.toFixed(2) || '—'}</div>
+      </div>
+      <div class="score-card">
+        <div class="score-label">52週高値</div>
+        <div class="score-val">${fmtCur(hi52)}</div>
+        <div class="score-sub">現在値 ${((last.close/hi52-1)*100).toFixed(1)}%</div>
+      </div>
+      <div class="score-card">
+        <div class="score-label">52週安値</div>
+        <div class="score-val">${fmtCur(lo52)}</div>
+        <div class="score-sub">現在値 +${((last.close/lo52-1)*100).toFixed(1)}%</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab ${currentTab==='chart'?'active':''}" onclick="switchTab('chart')">📈 チャート</button>
+      <button class="tab ${currentTab==='predict'?'active':''}" onclick="switchTab('predict')">🎯 予測</button>
+      <button class="tab ${currentTab==='events'?'active':''}" onclick="switchTab('events')">📅 イベント</button>
+      <button class="tab ${currentTab==='analysis'?'active':''}" onclick="switchTab('analysis')">🔍 分析</button>
+    </div>
+
+    <!-- Chart tab -->
+    <div class="tab-pane ${currentTab==='chart'?'active':''}" id="pane-chart">
+      <div class="period-row">
+        ${['1mo','3mo','6mo','1y','2y'].map(p=>`
+          <button class="period-btn ${currentPeriod===p?'active':''}" onclick="changePeriod('${p}')">${p}</button>
+        `).join('')}
+        <span style="margin-left:8px;font-size:11px;color:var(--text3);">インジケーター:</span>
+        <button class="period-btn" id="toggleBB" onclick="toggleIndicator('bb')">BB</button>
+        <button class="period-btn" id="toggleSMA" onclick="toggleIndicator('sma')">SMA</button>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-label">株価チャート (終値 + ボリンジャーバンド + SMA20/50)</div>
+        <canvas id="priceChart"></canvas>
+      </div>
+      <div class="indicators">
+        <div class="chart-wrap" style="padding:14px;">
+          <div class="chart-label">RSI (14)</div>
+          <canvas id="rsiChart"></canvas>
+        </div>
+        <div class="chart-wrap" style="padding:14px;">
+          <div class="chart-label">MACD</div>
+          <canvas id="macdChart"></canvas>
+        </div>
+        <div class="chart-wrap" style="padding:14px;">
+          <div class="chart-label">出来高</div>
+          <canvas id="volumeChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Predict tab -->
+    <div class="tab-pane ${currentTab==='predict'?'active':''}" id="pane-predict">
+      <div class="prediction-box">
+        <div class="prediction-title">🤖 AI価格予測 (テクニカル分析ベース)</div>
+        <div class="pred-grid">
+          <div class="pred-item">
+            <div class="pred-period">1ヶ月後 (21営業日)</div>
+            <div class="pred-price ${p1.cls}">${p1.priceFmt}</div>
+            <div class="pred-pct ${p1.cls}">${p1.pct}</div>
+            <div class="pred-conf">信頼度 ${p1.conf}%</div>
+          </div>
+          <div class="pred-divider"></div>
+          <div class="pred-item">
+            <div class="pred-period">3ヶ月後 (63営業日)</div>
+            <div class="pred-price ${p3.cls}">${p3.priceFmt}</div>
+            <div class="pred-pct ${p3.cls}">${p3.pct}</div>
+            <div class="pred-conf">信頼度 ${p3.conf}%</div>
+          </div>
+          <div class="pred-divider"></div>
+          <div class="pred-item">
+            <div class="pred-period">6ヶ月後 (126営業日)</div>
+            <div class="pred-price ${p6.cls}">${p6.priceFmt}</div>
+            <div class="pred-pct ${p6.cls}">${p6.pct}</div>
+            <div class="pred-conf">信頼度 ${p6.conf}%</div>
+          </div>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-label">予測チャート (実績 + 予測レンジ) <span class="badge badge-purple">AI予測</span></div>
+        <canvas id="predictChart"></canvas>
+      </div>
+      <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:14px;font-size:12px;color:var(--yellow);margin-top:12px;">
+        ⚠ 免責事項: この予測は線形回帰・RSI・MACD・ボリンジャーバンドを組み合わせたテクニカル分析に基づきます。
+        実際の株価は市場環境・決算・マクロ要因等により大幅に乖離する場合があります。投資は自己責任でお願いします。
+      </div>
+    </div>
+
+    <!-- Events tab -->
+    <div class="tab-pane ${currentTab==='events'?'active':''}" id="pane-events">
+      <div class="events-section">
+        <div class="section-title">今後のイベントカレンダー</div>
+        <div class="event-list">
+          ${events.length === 0 ? '<div style="color:var(--text3);font-size:13px;padding:12px;">登録イベントなし</div>' :
+            events.map(e => `
+            <div class="event-item">
+              <div class="event-dot" style="background:${e.color}"></div>
+              <div class="event-date">${e.date}</div>
+              <div>
+                <div class="event-type" style="color:${e.color}">${e.type}</div>
+                <div class="event-desc">${e.desc}</div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- Analysis tab -->
+    <div class="tab-pane ${currentTab==='analysis'?'active':''}" id="pane-analysis">
+      <div class="analysis-grid">
+        <div class="analysis-card">
+          <div class="ana-title">🟢 強気シナリオ</div>
+          <div style="font-size:13px;line-height:1.7;color:var(--text)">${analysis.bull || '—'}</div>
+        </div>
+        <div class="analysis-card">
+          <div class="ana-title">🔴 リスク・弱気シナリオ</div>
+          <div style="font-size:13px;line-height:1.7;color:var(--text)">${analysis.bear || '—'}</div>
+        </div>
+      </div>
+      <div class="analysis-card" style="margin-bottom:14px;">
+        <div class="ana-title">📌 投資テーゼ</div>
+        <div style="font-size:13px;line-height:1.7;color:var(--text)">${analysis.thesis || '—'}</div>
+      </div>
+      <div class="analysis-card">
+        <div class="ana-title">テクニカル サポート・レジスタンス</div>
+        <ul class="support-list">
+          ${generateSupportLevels(ohlc, cur)}
+        </ul>
+        <div style="margin-top:14px;">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">総合シグナル強度</div>
+          <div class="signal-gauge">
+            <span style="font-size:11px;color:var(--red)">売</span>
+            <div class="gauge-bar">
+              <div class="gauge-needle" style="left:${signalPct}%"></div>
+            </div>
+            <span style="font-size:11px;color:var(--green)">買</span>
+          </div>
+          <div class="gauge-labels"><span>強売</span><span>売</span><span>中立</span><span>買</span><span>強買</span></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // Render charts after DOM update
+  setTimeout(() => {
+    renderCharts(ohlc, pred);
+  }, 50);
+}
+
+function generateSupportLevels(ohlc, cur) {
+  const fmtCur = (v) => fmt(v, cur, cur==='JPY'?0:2);
+  const last = ohlc[ohlc.length-1].close;
+  const sma20 = calcSMA(ohlc, 20).filter(v=>v!=null).slice(-1)[0];
+  const sma50 = calcSMA(ohlc, Math.min(50,ohlc.length)).filter(v=>v!=null).slice(-1)[0];
+  const bb = calcBollingerBands(ohlc).slice(-1)[0];
+  const items = [
+    { label:'現在値',          val: last,      note:'' },
+    { label:'SMA20',          val: sma20,     note: last > sma20 ? '↑ 上' : '↓ 下' },
+    { label:'SMA50',          val: sma50,     note: last > sma50 ? '↑ 上' : '↓ 下' },
+    { label:'BB上限 (2σ)',    val: bb.upper,  note:'レジスタンス' },
+    { label:'BB中心',         val: bb.mid,    note:'ミッド' },
+    { label:'BB下限 (2σ)',    val: bb.lower,  note:'サポート' },
+  ];
+  return items.map(it => `
+    <li>
+      <span class="label">${it.label}</span>
+      <span class="val">${fmtCur(it.val)} <span style="font-size:10px;color:var(--text3)">${it.note}</span></span>
+    </li>`).join('');
+}
+
+// ============================================================
+// Chart Rendering
+// ============================================================
+let showBB = true, showSMA = true;
+
+function toggleIndicator(type) {
+  if (type === 'bb') { showBB = !showBB; document.getElementById('toggleBB').classList.toggle('active', showBB); }
+  if (type === 'sma') { showSMA = !showSMA; document.getElementById('toggleSMA').classList.toggle('active', showSMA); }
+  // Re-render (reload data)
+  if (currentStock) selectStock(currentStock.id);
+}
+
+function destroyChart(id) {
+  const existing = Chart.getChart(id);
+  if (existing) existing.destroy();
+}
+
+function renderCharts(ohlc, pred) {
+  const labels = ohlc.map(d => d.date.toLocaleDateString('ja-JP', {month:'short',day:'numeric'}));
+  const closes = ohlc.map(d => d.close);
+  const s = currentStock;
+  const color = s.color;
+
+  // --- Price Chart ---
+  destroyChart('priceChart');
+  const sma20 = calcSMA(ohlc, 20);
+  const sma50 = calcSMA(ohlc, Math.min(50, ohlc.length));
+  const bb = calcBollingerBands(ohlc);
+  const bbUpper = bb.map(b => b.upper);
+  const bbLower = bb.map(b => b.lower);
+
+  const priceDatasets = [
+    { label:'終値', data: closes, borderColor: color, borderWidth: 2, pointRadius: 0, tension: 0.3, fill: false, order: 0 },
+  ];
+  if (showSMA) {
+    priceDatasets.push({ label:'SMA20', data: sma20, borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0, tension:0, fill:false, borderDash:[4,2], order:1 });
+    priceDatasets.push({ label:'SMA50', data: sma50, borderColor:'#8b5cf6', borderWidth:1.5, pointRadius:0, tension:0, fill:false, borderDash:[4,2], order:2 });
+  }
+  if (showBB) {
+    priceDatasets.push({ label:'BB上限', data: bbUpper, borderColor:'rgba(148,163,184,0.4)', borderWidth:1, pointRadius:0, fill:false, borderDash:[2,3], order:3 });
+    priceDatasets.push({ label:'BB下限', data: bbLower, borderColor:'rgba(148,163,184,0.4)', borderWidth:1, pointRadius:0, fill:'+1', backgroundColor:'rgba(148,163,184,0.04)', borderDash:[2,3], order:4 });
+  }
+
+  new Chart(document.getElementById('priceChart'), {
+    type: 'line',
+    data: { labels, datasets: priceDatasets },
+    options: chartOpts({ yTitle: s.market === 'JP' ? '¥' : '$', stepSize: null }),
+  });
+
+  // --- RSI ---
+  destroyChart('rsiChart');
+  const rsiArr = calcRSI(ohlc);
+  new Chart(document.getElementById('rsiChart'), {
+    type: 'line',
+    data: { labels, datasets: [{
+      label:'RSI', data: rsiArr, borderColor:'#06b6d4', borderWidth:1.5, pointRadius:0, fill:false, tension:0.2
+    }]},
+    options: {
+      ...chartOpts({ yMin:0, yMax:100 }),
+      plugins: {
+        ...chartOpts({}).plugins,
+        annotation: { annotations: {
+          ob: { type:'line', yMin:70, yMax:70, borderColor:'rgba(239,68,68,0.4)', borderWidth:1 },
+          os: { type:'line', yMin:30, yMax:30, borderColor:'rgba(16,185,129,0.4)', borderWidth:1 },
+        }}
+      }
+    }
+  });
+
+  // --- MACD ---
+  destroyChart('macdChart');
+  const { macdLine, signal, hist } = calcMACD(ohlc);
+  new Chart(document.getElementById('macdChart'), {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label:'ヒスト', data: hist, backgroundColor: hist.map(v => v >= 0 ? 'rgba(16,185,129,0.5)' : 'rgba(239,68,68,0.5)'), borderWidth:0, order:2 },
+      { label:'MACD', data: macdLine, type:'line', borderColor:'#3b82f6', borderWidth:1.5, pointRadius:0, fill:false, order:1 },
+      { label:'シグナル', data: signal, type:'line', borderColor:'#f59e0b', borderWidth:1, pointRadius:0, fill:false, order:0 },
+    ]},
+    options: chartOpts({}),
+  });
+
+  // --- Volume ---
+  destroyChart('volumeChart');
+  const volumes = ohlc.map(d => d.volume);
+  const volColors = ohlc.map((d,i) => i>0 && d.close >= ohlc[i-1].close ? 'rgba(16,185,129,0.6)' : 'rgba(239,68,68,0.6)');
+  new Chart(document.getElementById('volumeChart'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label:'出来高', data: volumes, backgroundColor: volColors, borderWidth:0 }]},
+    options: chartOpts({}),
+  });
+
+  // --- Prediction Chart ---
+  if (document.getElementById('predictChart')) {
+    destroyChart('predictChart');
+    const actualLabels = [...labels];
+    const actualData = [...closes];
+    // Add future points
+    const last = ohlc[ohlc.length-1];
+    const futureLabels = ['1ヶ月後','3ヶ月後','6ヶ月後'];
+    const futurePrices = [pred['1mo'].price, pred['3mo'].price, pred['6mo'].price];
+    const allLabels = [...actualLabels, ...futureLabels];
+    const histData = [...actualData, null, null, null];
+    const predData = [...Array(actualData.length-1).fill(null), last.close, ...futurePrices];
+    const bearData = [...Array(actualData.length-1).fill(null), last.close, ...futurePrices.map(v=>v*0.93)];
+    const bullData = [...Array(actualData.length-1).fill(null), last.close, ...futurePrices.map(v=>v*1.07)];
+
+    new Chart(document.getElementById('predictChart'), {
+      type: 'line',
+      data: { labels: allLabels, datasets: [
+        { label:'実績', data: histData, borderColor: color, borderWidth:2, pointRadius:0, fill:false },
+        { label:'予測(中央)', data: predData, borderColor:'#8b5cf6', borderWidth:2, borderDash:[6,3], pointRadius:[...Array(actualData.length-1).fill(0),4,4,4,4], fill:false },
+        { label:'強気シナリオ', data: bullData, borderColor:'rgba(16,185,129,0.4)', borderWidth:1, borderDash:[2,4], pointRadius:0, fill:'-1', backgroundColor:'rgba(16,185,129,0.06)' },
+        { label:'弱気シナリオ', data: bearData, borderColor:'rgba(239,68,68,0.4)', borderWidth:1, borderDash:[2,4], pointRadius:0, fill:'+1', backgroundColor:'rgba(239,68,68,0.06)' },
+      ]},
+      options: chartOpts({ yTitle: s.market === 'JP' ? '¥' : '$' }),
+    });
+  }
+
+  // Set active state on period/indicator buttons
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    if (btn.id === 'toggleBB') btn.classList.toggle('active', showBB);
+    else if (btn.id === 'toggleSMA') btn.classList.toggle('active', showSMA);
+  });
+}
+
+function chartOpts({ yTitle='', yMin=undefined, yMax=undefined }) {
+  return {
+    responsive: true, maintainAspectRatio: true,
+    interaction: { mode:'index', intersect:false },
+    plugins: {
+      legend: { labels: { color:'#94a3b8', font:{ size:11 }, boxWidth:12 } },
+      tooltip: { backgroundColor:'#1a2332', borderColor:'#1e3a5f', borderWidth:1, titleColor:'#e2e8f0', bodyColor:'#94a3b8' },
+    },
+    scales: {
+      x: { ticks:{ color:'#475569', font:{size:10}, maxTicksLimit:8, maxRotation:0 }, grid:{ color:'rgba(30,58,95,0.4)' } },
+      y: { ticks:{ color:'#475569', font:{size:10} }, grid:{ color:'rgba(30,58,95,0.4)' }, min:yMin, max:yMax,
+        title: yTitle ? { display:true, text:yTitle, color:'#475569', font:{size:10} } : { display:false } },
+    }
+  };
+}
+
+// ============================================================
+// Tab / Period switching
+// ============================================================
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  const pane = document.getElementById('pane-' + tab);
+  if (pane) pane.classList.add('active');
+  // Re-render charts when switching to chart/predict
+  if ((tab === 'chart' || tab === 'predict') && currentStock) {
+    setTimeout(() => selectStock(currentStock.id), 10);
+  }
+}
+
+function changePeriod(p) {
+  currentPeriod = p;
+  if (currentStock) selectStock(currentStock.id);
+}
+
+// ============================================================
+// Refresh all
+// ============================================================
+async function refreshAll() {
+  const btn = document.getElementById('refreshBtn');
+  const icon = document.getElementById('refreshIcon');
+  btn.classList.add('loading');
+  icon.style.animation = 'spin 0.5s linear infinite';
+  icon.style.display = 'inline-block';
+  await fetchAllPrices();
+  if (currentStock) await selectStock(currentStock.id);
+  btn.classList.remove('loading');
+  icon.style.animation = '';
+}
+
+// ============================================================
+// Init
+// ============================================================
+(async function init() {
+  renderSidebar();
+  await fetchAllPrices();
+  // Auto-select first stock
+  await selectStock(STOCKS[0].id);
+})();
+</script>
+</body>
+</html>

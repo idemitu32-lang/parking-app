@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>駐車場看板</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      background: #f0f0f0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 30px;
+    }
+
+    .sign {
+      width: 210mm;
+      min-height: 297mm;
+      background: white;
+      padding: 12mm;
+      display: flex;
+      flex-direction: column;
+      gap: 8mm;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+
+    /* ヘッダー */
+    .header {
+      background: #1a1a2e;
+      color: white;
+      text-align: center;
+      padding: 6mm 4mm;
+      border-radius: 4mm;
+    }
+    .header .parking-icon { font-size: 20mm; line-height: 1; }
+    .header h1 {
+      font-size: 11mm;
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      margin-top: 2mm;
+    }
+    .header p {
+      font-size: 4.5mm;
+      opacity: 0.8;
+      margin-top: 1mm;
+    }
+
+    /* PayPay */
+    .paypay-section {
+      border: 1.5mm solid #FF0033;
+      border-radius: 4mm;
+      padding: 5mm 6mm;
+      display: flex;
+      align-items: center;
+      gap: 5mm;
+      background: #fff5f5;
+    }
+    .paypay-logo {
+      background: #FF0033;
+      color: white;
+      font-weight: 900;
+      font-size: 7mm;
+      padding: 3mm 5mm;
+      border-radius: 2mm;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .paypay-text h2 {
+      font-size: 7mm;
+      font-weight: 900;
+      color: #FF0033;
+    }
+    .paypay-text p {
+      font-size: 3.5mm;
+      color: #666;
+      margin-top: 1mm;
+    }
+
+    /* 料金表 */
+    .pricing {
+      border: 0.5mm solid #ddd;
+      border-radius: 4mm;
+      overflow: hidden;
+    }
+    .pricing-title {
+      background: #1a1a2e;
+      color: white;
+      text-align: center;
+      font-size: 5.5mm;
+      font-weight: 700;
+      padding: 3mm;
+      letter-spacing: 0.1em;
+    }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+    .pricing-item {
+      padding: 5mm 4mm;
+      text-align: center;
+      border-right: 0.5mm solid #eee;
+    }
+    .pricing-item:last-child { border-right: none; }
+    .pricing-item .time {
+      font-size: 3.5mm;
+      color: #888;
+      margin-bottom: 2mm;
+    }
+    .pricing-item .price {
+      font-size: 9mm;
+      font-weight: 900;
+      color: #1a1a2e;
+      line-height: 1;
+    }
+    .pricing-item .price span {
+      font-size: 4mm;
+      font-weight: 400;
+    }
+    .pricing-item .cap {
+      display: inline-block;
+      margin-top: 2mm;
+      background: #FF0033;
+      color: white;
+      font-size: 3mm;
+      font-weight: 700;
+      padding: 0.5mm 2mm;
+      border-radius: 1mm;
+    }
+    .pricing-item .label {
+      font-size: 3.5mm;
+      color: #555;
+      margin-top: 2mm;
+    }
+    .pricing-note {
+      background: #f8f8f8;
+      padding: 3mm 4mm;
+      font-size: 3mm;
+      color: #888;
+      text-align: center;
+      border-top: 0.5mm solid #eee;
+    }
+
+    /* メインコンテンツ: QR + 手順 */
+    .main-content {
+      display: flex;
+      gap: 6mm;
+      align-items: stretch;
+    }
+
+    /* QRコード */
+    .qr-section {
+      flex-shrink: 0;
+      text-align: center;
+      background: #f8f9ff;
+      border: 0.5mm solid #ddd;
+      border-radius: 4mm;
+      padding: 5mm;
+      width: 55mm;
+    }
+    .qr-section .qr-label {
+      font-size: 3.5mm;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 3mm;
+    }
+    .qr-section img {
+      width: 44mm;
+      height: 44mm;
+      display: block;
+      margin: 0 auto;
+    }
+    .qr-section .qr-url {
+      font-size: 2.5mm;
+      color: #888;
+      margin-top: 2mm;
+      word-break: break-all;
+    }
+    .qr-section .qr-note {
+      font-size: 3mm;
+      color: #555;
+      margin-top: 3mm;
+      line-height: 1.6;
+    }
+
+    /* 利用手順 */
+    .steps {
+      flex: 1;
+    }
+    .steps-title {
+      font-size: 4.5mm;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 3mm;
+      padding-bottom: 2mm;
+      border-bottom: 0.5mm solid #eee;
+    }
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 3mm;
+      margin-bottom: 4mm;
+    }
+    .step-num {
+      background: #1a1a2e;
+      color: white;
+      width: 7mm;
+      height: 7mm;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 4mm;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .step-body h3 {
+      font-size: 4mm;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 0.5mm;
+    }
+    .step-body p {
+      font-size: 3mm;
+      color: #666;
+      line-height: 1.5;
+    }
+
+    /* 注意事項 */
+    .notes {
+      background: #fffbf0;
+      border: 0.5mm solid #f0d080;
+      border-radius: 3mm;
+      padding: 4mm 5mm;
+    }
+    .notes h3 {
+      font-size: 3.5mm;
+      font-weight: 700;
+      color: #b8860b;
+      margin-bottom: 2mm;
+    }
+    .notes ul {
+      list-style: none;
+      font-size: 3mm;
+      color: #666;
+      line-height: 1.8;
+    }
+    .notes ul li::before { content: "・"; }
+
+    /* お問い合わせ */
+    .contact {
+      background: #1a1a2e;
+      color: white;
+      border-radius: 4mm;
+      padding: 4mm 6mm;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .contact h3 {
+      font-size: 4mm;
+      font-weight: 700;
+      opacity: 0.8;
+    }
+    .contact .tel {
+      font-size: 8mm;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+    }
+    .contact .hours {
+      font-size: 3mm;
+      opacity: 0.7;
+    }
+
+    /* 印刷設定 */
+    @media print {
+      body { background: white; padding: 0; }
+      .sign { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="sign">
+
+  <!-- ヘッダー -->
+  <div class="header">
+    <div class="parking-icon">🅿</div>
+    <h1>○○駐車場</h1>
+    <p>24時間 ご利用いただけます</p>
+  </div>
+
+  <!-- PayPay -->
+  <div class="paypay-section">
+    <div class="paypay-logo">PayPay</div>
+    <div class="paypay-text">
+      <h2>PayPay 使えます</h2>
+      <p>スマホで予約・決済が完結します。現金・カード不要です。</p>
+    </div>
+  </div>
+
+  <!-- 料金表 -->
+  <div class="pricing">
+    <div class="pricing-title">料　金　表</div>
+    <div class="pricing-grid">
+      <div class="pricing-item">
+        <div class="time">基本料金</div>
+        <div class="price">100<span>円</span></div>
+        <div class="label">60分ごと</div>
+      </div>
+      <div class="pricing-item">
+        <div class="time">昼間</div>
+        <div class="price">500<span>円</span></div>
+        <div class="cap">打ち止め</div>
+        <div class="label">7時 〜 19時</div>
+      </div>
+      <div class="pricing-item">
+        <div class="time">夜間</div>
+        <div class="price">500<span>円</span></div>
+        <div class="cap">打ち止め</div>
+        <div class="label">19時 〜 翌7時</div>
+      </div>
+    </div>
+    <div class="pricing-note">※ 打ち止めとは「それ以上料金が加算されない上限」のことです</div>
+  </div>
+
+  <!-- QR + 手順 -->
+  <div class="main-content">
+    <div class="qr-section">
+      <div class="qr-label">▼ こちらから予約</div>
+      <img
+        src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=https://parking-app-r2cp.vercel.app&margin=10"
+        alt="予約QRコード"
+      />
+      <div class="qr-url">parking-app-r2cp.vercel.app</div>
+      <div class="qr-note">スマホのカメラで<br>読み取ってください</div>
+    </div>
+
+    <div class="steps">
+      <div class="steps-title">📱 ご利用の流れ</div>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>QRコードを読み取る</h3>
+          <p>スマホのカメラでQRコードを読み取り、予約サイトを開きます</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>利用時間を選択する</h3>
+          <p>開始時刻と利用時間を選ぶと、料金が自動で計算されます</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>PayPayで支払う</h3>
+          <p>お名前・メールを入力し、PayPayで決済します</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3>予約完了・駐車開始</h3>
+          <p>決済完了画面が出たら、ご予約確定です。そのまま駐車できます</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 注意事項 -->
+  <div class="notes">
+    <h3>⚠ ご注意</h3>
+    <ul>
+      <li>必ず事前にオンライン予約・決済を完了してから駐車してください</li>
+      <li>予約時間を超えた場合は、延長のご予約をお願いいたします</li>
+      <li>当駐車場は1台分のスペースです。満車の場合は別の駐車場をご利用ください</li>
+      <li>駐車場内での事故・盗難については責任を負いかねます</li>
+    </ul>
+  </div>
+
+  <!-- お問い合わせ -->
+  <div class="contact">
+    <div>
+      <h3>お問い合わせ</h3>
+      <div style="font-size:5mm; font-weight:700; margin-top:1mm;">出光不動産</div>
+      <div class="hours">受付時間：平日 10時〜16時</div>
+    </div>
+    <div style="text-align:right">
+      <div class="tel">0940-32-2726</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

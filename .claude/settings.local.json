@@ -7,7 +7,30 @@
       "Bash(powershell.exe -Command \"node -v; npm -v\")",
       "Bash(npm show:*)",
       "Bash(curl -s https://registry.npmjs.org/@paypayopa/paypayopa-sdk-node/latest)",
-      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('version','?'\\)\\)\")"
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('version','?'\\)\\)\")",
+      "Bash(ls \"C:\\\\Users\\\\idemi\\\\Desktop\" 2>&1 | head -50)",
+      "Bash(ls \"C:\\\\Users\\\\idemi\" 2>&1 | head -30)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\idemi\" -Recurse -Filter \"etf*\" -ErrorAction SilentlyContinue)",
+      "PowerShell(head -20)",
+      "Bash(npm install *)",
+      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\idemi\\\\Desktop\\\\駐車場アプリ作成\\\\app\\\\stocks\")",
+      "Bash(Out-Null)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:3000/api/stock/prices)",
+      "Bash(node -e \"const yf = require\\('yahoo-finance2'\\); console.log\\(typeof yf, Object.keys\\(yf\\).slice\\(0,10\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k, d[k].get\\('price'\\), d[k].get\\('error','ok'\\)\\) for k in list\\(d.keys\\(\\)\\)[:5]]\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k, d[k].get\\('price'\\), d[k].get\\('changePct'\\), d[k].get\\('error','ok'\\)\\) for k in d.keys\\(\\)]\")",
+      "Bash(node -e ' *)",
+      "Bash(curl -s \"http://localhost:3000/api/stock/prices\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k, d[k].get\\('price'\\), d[k].get\\('error','✓'\\)\\) for k in d.keys\\(\\)]\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k, d[k].get\\('price'\\), d[k].get\\('error','OK'\\)\\) for k in d.keys\\(\\)]\")",
+      "Bash(curl -s \"http://localhost:3000/api/stock/chart?ticker=MU&range=1mo\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('quotes:', len\\(d['quotes']\\), 'first:', d['quotes'][0], 'last:', d['quotes'][-1]\\)\")",
+      "Bash(curl -s \"http://localhost:3000/stocks\")",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(npm uninstall *)"
     ]
   }
 }
