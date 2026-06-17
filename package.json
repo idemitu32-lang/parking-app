@@ -8,12 +8,13 @@
     "start": "next start"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.3",
     "@paypayopa/paypayopa-sdk-node": "^2.1.0",
+    "@supabase/supabase-js": "^2.39.3",
     "next": "^15.2.4",
     "react": "^18",
     "react-dom": "^18",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "yahoo-finance2": "^3.15.3"
   },
   "devDependencies": {
     "@types/node": "^20",
