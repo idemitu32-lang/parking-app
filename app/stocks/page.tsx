@@ -8,6 +8,13 @@ interface OHLC { date: string; open: number; high: number; low: number; close: n
 interface StockDef { id: string; name: string; en: string; ticker: string; market: 'US'|'JP'; color: string; sector: string; }
 interface PriceData { price: number; changePct: number; change: number; high52: number; low52: number; currency: string; error?: string; }
 
+interface ScoreReason { name: string; score: number; reason: string; source?: string; }
+interface CategoryScore { score: number; confidence: number; reasons: ScoreReason[]; warnings: string[]; }
+interface ForecastRange { downside: number; base: number; upside: number; }
+interface HorizonForecast { horizon: string; score: number; direction: string; confidence: number; expectedRange: ForecastRange; positiveFactors: ScoreReason[]; negativeFactors: ScoreReason[]; warnings: string[]; }
+interface BacktestResult { verified: boolean; period: string; sampleSize: number; note?: string; oneMonth?: { winRate: number; avgReturn: number; medianReturn: number; maxDrawdown: number; }; signalPerformance: Array<{ signal: string; count: number; avgReturn1m: number; winRate1m: number; }>; }
+interface StockForecast { symbol: string; name: string; updatedAt: string; dataQuality: { score: number; missingFields: string[]; warnings: string[]; }; categoryScores: { technical: CategoryScore; theme: CategoryScore; macro: CategoryScore; event: CategoryScore; fundamental: CategoryScore; }; forecast: { shortTerm: HorizonForecast; mediumTerm: HorizonForecast; longTerm: HorizonForecast; }; backtest: BacktestResult; }
+
 // ============================================================
 // 銘柄マスタ
 // ============================================================
@@ -219,7 +226,10 @@ export default function StocksPage() {
   const [selectedId, setSelectedId] = useState<string>('MU');
   const [ohlc, setOhlc] = useState<OHLC[]>([]);
   const [period, setPeriod] = useState('3mo');
-  const [tab, setTab] = useState<'chart'|'predict'|'events'|'analysis'>('chart');
+  const [tab, setTab] = useState<'chart'|'forecast'|'events'|'analysis'>('chart');
+  const [forecast, setForecast] = useState<StockForecast | null>(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [forecastError, setForecastError] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastUpdate, setLastUpdate] = useState('');
@@ -262,13 +272,29 @@ export default function StocksPage() {
     }
   }, []);
 
+  const fetchForecast = useCallback(async (id: string) => {
+    const s = STOCKS.find(x => x.id === id)!;
+    setForecastLoading(true); setForecastError(''); setForecast(null);
+    try {
+      const res = await fetch(`/api/stock/forecast?ticker=${encodeURIComponent(s.ticker)}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setForecast(data);
+    } catch (e: any) {
+      setForecastError(e.message);
+    } finally {
+      setForecastLoading(false);
+    }
+  }, []);
+
   useEffect(() => { fetchPrices(); }, [fetchPrices]);
   useEffect(() => { fetchChart(selectedId, period); }, [selectedId, period, fetchChart]);
+  useEffect(() => { if (tab === 'forecast') fetchForecast(selectedId); }, [selectedId, tab, fetchForecast]);
 
   // Render charts after ohlc loads
   useEffect(() => {
     if (!chartReady || !ohlc.length || loading) return;
-    if (tab !== 'chart' && tab !== 'predict') return;
+    if (tab !== 'chart') return;
     setTimeout(() => renderCharts(), 80);
   }, [chartReady, ohlc, tab, loading, selected]);
 
@@ -326,28 +352,6 @@ export default function StocksPage() {
       });
     }
 
-    if (tab === 'predict') {
-      const last = ohlc[ohlc.length-1].close;
-      const futureLabels = ['1ヶ月後','3ヶ月後','6ヶ月後'];
-      const futurePrices = [pred['1mo'].price, pred['3mo'].price, pred['6mo'].price];
-      const allLabels = [...labels, ...futureLabels];
-      const histData = [...ohlc.map(d=>d.close), null, null, null];
-      const predData = [...Array(ohlc.length-1).fill(null), last, ...futurePrices];
-      const bullData = [...Array(ohlc.length-1).fill(null), last, ...futurePrices.map(v=>v*1.07)];
-      const bearData = [...Array(ohlc.length-1).fill(null), last, ...futurePrices.map(v=>v*0.93)];
-
-      destroyChart('predictChart');
-      new window.Chart(document.getElementById('predictChart'), {
-        type:'line',
-        data:{ labels:allLabels, datasets:[
-          { label:'実績', data:histData, borderColor:selected.color, borderWidth:2, pointRadius:0, fill:false },
-          { label:'予測(中央)', data:predData, borderColor:'#8b5cf6', borderWidth:2, borderDash:[6,3], pointRadius:[...Array(ohlc.length-1).fill(0),4,4,4,4], fill:false },
-          { label:'強気+7%', data:bullData, borderColor:'rgba(16,185,129,0.4)', borderWidth:1, borderDash:[2,4], pointRadius:0, fill:'-1', backgroundColor:'rgba(16,185,129,0.06)' },
-          { label:'弱気-7%', data:bearData, borderColor:'rgba(239,68,68,0.4)', borderWidth:1, borderDash:[2,4], pointRadius:0, fill:'+1', backgroundColor:'rgba(239,68,68,0.06)' },
-        ]},
-        options: CHART_OPTS(cur==='JPY'?'¥':'$'),
-      });
-    }
   }
 
   // Derived indicators
@@ -376,13 +380,6 @@ export default function StocksPage() {
   const displayChg = pData?.changePct;
   const hi52 = pData?.high52 ?? Math.max(...ohlc.map(d=>d.high));
   const lo52 = pData?.low52 ?? Math.min(...ohlc.map(d=>d.low));
-
-  const fmtPredItem = (key: '1mo'|'3mo'|'6mo') => {
-    if (!pred) return { priceFmt:'—', pct:'—', cls:'text-slate-400', conf:'—' };
-    const p = pred[key].price;
-    const pct = (p - lastClose) / lastClose * 100;
-    return { priceFmt: fp(p), pct: fmtPct(pct), cls: pctCls(pct), conf: pred[key].conf+'' };
-  };
 
   const events = (EVENTS[selectedId] || []).filter(e => new Date(e.date) >= new Date()).slice(0,5);
   const ana = ANALYSIS[selectedId] ?? {};
@@ -490,12 +487,12 @@ export default function StocksPage() {
 
           {/* Tabs */}
           <div className="flex gap-1 mb-5 bg-[#111827] border border-[#1e3a5f] rounded-xl p-1 w-fit">
-            {(['chart','predict','events','analysis'] as const).map(t => (
+            {(['chart','forecast','events','analysis'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                   tab===t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-[#1a2332]'
                 }`}>
-                {t==='chart'?'📈 チャート':t==='predict'?'🎯 予測':t==='events'?'📅 イベント':'🔍 分析'}
+                {t==='chart'?'📈 チャート':t==='forecast'?'🎯 シナリオ分析':t==='events'?'📅 イベント':'🔍 分析'}
               </button>
             ))}
           </div>
@@ -538,35 +535,179 @@ export default function StocksPage() {
             </div>
           )}
 
-          {/* Predict Tab */}
-          {!loading && tab === 'predict' && (
+          {/* Forecast Tab */}
+          {tab === 'forecast' && (
             <div>
-              <div className="bg-gradient-to-br from-blue-500/8 to-purple-500/8 border border-blue-500/30 rounded-2xl p-5 mb-4">
-                <div className="text-sm font-bold text-cyan-400 mb-4">🤖 AI価格予測 (テクニカル分析ベース)</div>
-                <div className="grid grid-cols-3 gap-0 divide-x divide-[#1e3a5f]">
-                  {(['1mo','3mo','6mo'] as const).map((k,i) => {
-                    const p = fmtPredItem(k);
-                    return (
-                      <div key={k} className="text-center px-4 py-2">
-                        <div className="text-xs text-slate-400 font-semibold mb-2">
-                          {k==='1mo'?'1ヶ月後':k==='3mo'?'3ヶ月後':'6ヶ月後'}
-                        </div>
-                        <div className={`text-xl font-extrabold ${p.cls}`}>{p.priceFmt}</div>
-                        <div className={`text-sm font-bold mt-1 ${p.cls}`}>{p.pct}</div>
-                        <div className="text-[10px] text-slate-500 mt-1.5">信頼度 {p.conf}%</div>
-                      </div>
-                    );
-                  })}
+              {forecastLoading && (
+                <div className="flex items-center justify-center h-48 flex-col gap-3">
+                  <div className="w-10 h-10 border-2 border-[#1e3a5f] border-t-blue-500 rounded-full animate-spin"/>
+                  <div className="text-sm text-slate-400 animate-pulse">シナリオ分析を計算中...</div>
                 </div>
-              </div>
-              <div className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-5 mb-4">
-                <div className="text-xs font-bold text-slate-400 mb-3">予測チャート (実績 + 強気/弱気レンジ)</div>
-                <canvas id="predictChart" style={{maxHeight:'320px'}}/>
-              </div>
-              <div className="bg-yellow-500/8 border border-yellow-500/25 rounded-xl p-4 text-xs text-yellow-400">
-                ⚠ 免責事項: この予測は線形回帰・RSI・MACD・ボリンジャーバンドを組み合わせたテクニカル分析に基づきます。
-                実際の株価は市場環境・決算・マクロ要因等により大幅に乖離する場合があります。投資は自己責任でお願いします。
-              </div>
+              )}
+              {forecastError && !forecastLoading && (
+                <div className="bg-red-500/10 border border-red-500/25 text-red-400 rounded-xl p-4 text-sm mb-4">⚠ {forecastError}</div>
+              )}
+              {forecast && !forecastLoading && (() => {
+                const { categoryScores: cs, forecast: fc, backtest: bt, dataQuality: dq } = forecast;
+                const dirColor = (d: string) => d.includes('strong_bull') ? '#10b981' : d.includes('bull') ? '#34d399' : d.includes('bear') && d.includes('strong') ? '#ef4444' : d.includes('bear') ? '#f87171' : '#94a3b8';
+                const dirLabel = (d: string) => ({ strong_bullish:'強い強気 ▲▲', bullish:'強気 ▲', slightly_bullish:'やや強気 △', neutral:'中立 ─', slightly_bearish:'やや弱気 ▽', bearish:'弱気 ▼', strong_bearish:'強い弱気 ▼▼' }[d] ?? d);
+                const confBar = (c: number) => (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <div className="flex-1 h-1.5 bg-[#1e3a5f] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-blue-500 transition-all" style={{width:`${c*100}%`}}/>
+                    </div>
+                    <span className="text-[10px] text-slate-500">{(c*100).toFixed(0)}%</span>
+                  </div>
+                );
+                const fmtRange = (r: ForecastRange) => {
+                  const fmt = (v: number) => cur === 'JPY' ? '¥'+Math.round(v).toLocaleString() : '$'+v.toFixed(2);
+                  return { down: fmt(r.downside), base: fmt(r.base), up: fmt(r.upside) };
+                };
+                return (
+                  <div className="flex flex-col gap-4">
+                    {/* Data quality */}
+                    {dq.missingFields.length > 0 && (
+                      <div className="bg-yellow-500/8 border border-yellow-500/25 rounded-xl p-3 text-xs text-yellow-400">
+                        ⚠ データ品質スコア: {dq.score}/100 — 不足: {dq.missingFields.join(', ')}
+                      </div>
+                    )}
+
+                    {/* 3-horizon grid */}
+                    <div className="grid grid-cols-3 gap-3">
+                      {([fc.shortTerm, fc.mediumTerm, fc.longTerm] as HorizonForecast[]).map((h, i) => {
+                        const r = fmtRange(h.expectedRange);
+                        return (
+                          <div key={h.horizon} className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-4">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">
+                              {i===0?'短期 (1週〜1ヶ月)':i===1?'中期 (1〜3ヶ月)':'長期 (3〜12ヶ月)'}
+                            </div>
+                            <div className="text-2xl font-extrabold mb-0.5" style={{color:dirColor(h.direction)}}>
+                              {dirLabel(h.direction)}
+                            </div>
+                            <div className="text-[11px] text-slate-400 mb-2">スコア: {h.score}/100</div>
+                            <div className="text-[10px] text-slate-500 mb-1">信頼度</div>
+                            {confBar(h.confidence)}
+                            <div className="mt-3 border-t border-[#1e3a5f] pt-3 grid grid-cols-3 gap-0 text-center text-[10px]">
+                              <div>
+                                <div className="text-red-400 font-bold mb-0.5">弱気</div>
+                                <div className="text-slate-300 font-semibold">{r.down}</div>
+                              </div>
+                              <div className="border-x border-[#1e3a5f]">
+                                <div className="text-slate-400 font-bold mb-0.5">標準</div>
+                                <div className="text-slate-200 font-bold">{r.base}</div>
+                              </div>
+                              <div>
+                                <div className="text-emerald-400 font-bold mb-0.5">強気</div>
+                                <div className="text-slate-300 font-semibold">{r.up}</div>
+                              </div>
+                            </div>
+                            {h.warnings.length > 0 && (
+                              <div className="mt-2 text-[10px] text-yellow-400">{h.warnings[0]}</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Score breakdown */}
+                    <div className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-4">
+                      <div className="text-xs font-bold text-slate-400 uppercase mb-3">スコア内訳</div>
+                      <div className="grid grid-cols-5 gap-2">
+                        {([
+                          { key:'テクニカル', cat: cs.technical },
+                          { key:'テーマ', cat: cs.theme },
+                          { key:'マクロ', cat: cs.macro },
+                          { key:'イベント', cat: cs.event },
+                          { key:'ファンダ', cat: cs.fundamental },
+                        ]).map(({ key, cat }) => (
+                          <div key={key} className="text-center">
+                            <div className="text-[10px] text-slate-500 mb-1">{key}</div>
+                            <div className="text-lg font-extrabold" style={{color: cat.score>=65?'#10b981':cat.score>=45?'#94a3b8':'#ef4444'}}>{cat.score}</div>
+                            {confBar(cat.confidence)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Short-term factors */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-4">
+                        <div className="text-xs font-bold text-emerald-500 mb-3">✚ プラス材料（短期）</div>
+                        {fc.shortTerm.positiveFactors.length === 0
+                          ? <div className="text-slate-500 text-xs">なし</div>
+                          : fc.shortTerm.positiveFactors.map((f, i) => (
+                            <div key={i} className="mb-2 last:mb-0">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-slate-200">{f.name}</span>
+                                <span className="text-xs font-bold text-emerald-400">+{f.score}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">{f.reason}</div>
+                            </div>
+                          ))
+                        }
+                      </div>
+                      <div className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-4">
+                        <div className="text-xs font-bold text-red-500 mb-3">✖ マイナス材料（短期）</div>
+                        {fc.shortTerm.negativeFactors.length === 0
+                          ? <div className="text-slate-500 text-xs">なし</div>
+                          : fc.shortTerm.negativeFactors.map((f, i) => (
+                            <div key={i} className="mb-2 last:mb-0">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-slate-200">{f.name}</span>
+                                <span className="text-xs font-bold text-red-400">{f.score}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">{f.reason}</div>
+                            </div>
+                          ))
+                        }
+                      </div>
+                    </div>
+
+                    {/* Backtest */}
+                    <div className="bg-[#111827] border border-[#1e3a5f] rounded-2xl p-4">
+                      <div className="text-xs font-bold text-slate-400 uppercase mb-3">バックテスト結果 <span className="text-[10px] font-normal normal-case">（過去シグナルの参考値）</span></div>
+                      {!bt.verified
+                        ? <div className="text-xs text-yellow-400">{bt.note ?? 'データ不足のためバックテスト未実施'}</div>
+                        : (
+                          <div>
+                            <div className="text-[10px] text-slate-500 mb-2">期間: {bt.period} / サンプル数: {bt.sampleSize}件</div>
+                            {bt.oneMonth && (
+                              <div className="grid grid-cols-4 gap-2 mb-3">
+                                {[
+                                  { l:'勝率', v:`${bt.oneMonth.winRate}%` },
+                                  { l:'平均リターン', v:`${bt.oneMonth.avgReturn>0?'+':''}${bt.oneMonth.avgReturn}%` },
+                                  { l:'中央値', v:`${bt.oneMonth.medianReturn>0?'+':''}${bt.oneMonth.medianReturn}%` },
+                                  { l:'最大DD', v:`-${bt.oneMonth.maxDrawdown}%` },
+                                ].map(({ l, v }) => (
+                                  <div key={l} className="bg-[#0a0e1a] rounded-xl p-2.5 text-center">
+                                    <div className="text-[10px] text-slate-500 mb-1">{l}</div>
+                                    <div className="text-sm font-bold text-slate-200">{v}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div className="flex flex-col gap-1.5">
+                              {bt.signalPerformance.map((sp, i) => (
+                                <div key={i} className="flex items-center justify-between text-[11px]">
+                                  <span className="text-slate-400">{sp.signal} ({sp.count}件)</span>
+                                  <span className="text-slate-300">勝率 <b>{sp.winRate1m}%</b> / 平均 <b>{sp.avgReturn1m>0?'+':''}{sp.avgReturn1m}%</b></span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      }
+                    </div>
+
+                    {/* Disclaimer */}
+                    <div className="bg-yellow-500/6 border border-yellow-500/20 rounded-xl p-4 text-[11px] text-yellow-400 leading-relaxed">
+                      ⚠ 免責事項: 本シナリオ分析はテクニカル指標・テーマ評価・イベント分析・マクロ環境を組み合わせた参考情報であり、将来の株価を保証するものではありません。
+                      実際の株価は市場環境・決算・地政学リスク等により大幅に乖離する場合があります。投資判断は自己責任でお願いします。
+                      「想定レンジ」は過去ボラティリティをもとにした統計的範囲であり、価格目標ではありません。
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
