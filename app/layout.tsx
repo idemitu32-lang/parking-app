@@ -1,10 +1,11 @@
 import type { Metadata } from 'next'
 import './globals.css'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: '駐車場予約',
   description: '時間貸し駐車場のオンライン予約・PayPay決済',
-  viewport: 'width=device-width, initial-scale=1',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
